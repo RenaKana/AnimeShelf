@@ -17,6 +17,7 @@ This candidate contains no third-party poster/demo asset bundle. It contains the
 
 ## Images and fixtures
 
+- `docs/images/settings-appearance.png` is an unedited screenshot of the public desktop source's actual Settings page, captured on 2026-09-23 with an empty, isolated library (application source corresponding to `203f52e`). It contains no user media, credentials or third-party poster artwork. It documents the interface rather than a mockup; the unresolved UI-icon provenance above still applies.
 - No poster/demo image directory is included in this desktop candidate's publication scope.
 - Any images under tests or fixtures are excluded from this ledger unless a future release explicitly packages them. They must be reviewed individually for source, permission, and attribution before publication.
 - This document intentionally does not convert existing source-checkout poster caches or real-site fixtures into a redistributable asset claim.

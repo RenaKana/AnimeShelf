@@ -6,7 +6,9 @@ AnimeShelf can expose a separate, bearer-authenticated data API for local integr
 http://127.0.0.1:3003/api/v1
 ```
 
-The desktop application (or development server) must be running. The external listener is always loopback-only and starts disabled. Enable it in **设置 → 外部 API**, save a port, then create a token. The token's full value appears once; store it securely. Names, roles, expiry and revocation can be managed there. Tokens are persisted only as SHA-256 hashes; revoked tokens cannot be restored.
+This API lets your own scripts or tools access the local AnimeShelf library. It is optional and does not require buying a Key from AnimeShelf. Tokens are created locally and are separate from any AniList, Bangumi or TMDB account credentials used for title information. For ordinary library operations, see the [user guide](USER-GUIDE.md).
+
+The desktop application (or development server) must be running. The external listener is always loopback-only and starts disabled. Enable **启用专用外部接口** in **设置 → 外部 API**, set a port, choose **保存设置**, then create a token under **访问令牌**. Prefer the **只读** role for tools that only need to read data. The token's full value appears once; store it securely. Names, roles, expiry and revocation can be managed there. Tokens are persisted only as SHA-256 hashes; revoked tokens cannot be restored.
 
 The external listener does not expose the owner settings API, download-source configuration or queries, internal website routers, static files, arbitrary SQL, arbitrary paths, scans, backups, metadata refresh, or library configuration.
 
