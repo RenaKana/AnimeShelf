@@ -1,0 +1,65 @@
+{
+  "id": "media-catalog",
+  "requires": [],
+  "defaultEnabled": true,
+  "name": "合集与作品清单",
+  "version": "1.0.0",
+  "routes": [
+    { "method": "GET", "path": "/api/folders/:id/collection-organization" },
+    { "method": "PATCH", "path": "/api/folders/:id/collection-organization" },
+    {
+      "method": "GET",
+      "path": "/api/folders/:id/collection-presentation"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/folders/:id/collection-presentation"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/collection-members/:itemId/group"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/collection-reset"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/rebuild-media-catalog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/media-catalog-title"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/media-work-groups/:groupId/title"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/media-work-groups/:targetGroupId/merge"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/media-work-groups/:groupId/detach"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/media-work-groups/:groupId/attach"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/media-work-groups/:groupId/split"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/media-catalog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/pin"
+    }
+  ],
+  "optional": [],
+  "pages": []
+}

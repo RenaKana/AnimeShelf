@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局动效 token：所有过渡/动画共享同一套曲线与节奏（Emil 风格强缓动，勿用内置 ease-out） */
+:root {
+  color-scheme: dark;
+  --ui-bg: 21 26 33;
+  --ui-surface: 29 37 48;
+  --ui-surface-hover: 38 50 65;
+  --ui-surface-modal: 29 37 48;
+  --ui-border: 55 68 87;
+  --ui-accent: 120 180 255;
+  --ui-accent-fill: 11 95 204;
+  --ui-accent-hover: 9 78 168;
+  --ui-success: 110 211 165;
+  --ui-warning: 241 188 85;
+  --ui-error: 255 144 150;
+  --ui-ink: 255 255 255;
+  --ui-backdrop: 10 12 16;
+  --ui-field-bg: 7 10 16;
+  --ui-wash: 0 0 0;
+  --ui-text-white: 255 255 255;
+  --ui-text-primary: 232 238 245;
+  --ui-text-secondary: 168 181 198;
+  --ui-secondary-min-alpha: 0;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);       /* 进场/退场：启动快、收尾缓 */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);   /* 屏幕内移动/变形 */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉类 */
+  --ui-panel-bg: transparent;
+  --ui-panel-subtle-bg: transparent;
+  --ui-panel-strong-bg: rgb(var(--ui-surface-modal));
+  --ui-control-bg: rgb(var(--ui-surface) / .3);
+  --ui-control-hover-bg: rgb(var(--ui-surface-hover) / .46);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ui-bg: 245 247 250;
+  --ui-surface: 255 255 255;
+  --ui-surface-hover: 238 242 246;
+  --ui-surface-modal: 255 255 255;
+  --ui-border: 216 222 232;
+  --ui-accent: 7 87 181;
+  --ui-success: 15 112 74;
+  --ui-warning: 143 82 0;
+  --ui-error: 180 35 48;
+  --ui-ink: 30 41 59;
+  --ui-backdrop: 255 255 255;
+  --ui-field-bg: 255 255 255;
+  --ui-wash: 148 163 184;
+  --ui-text-white: 23 33 47;
+  --ui-text-primary: 23 33 47;
+  --ui-text-secondary: 86 101 121;
+  --ui-text-control: 61 74 92;
+  --ui-text-heading: 23 30 42;
+  --ui-tone-amber: 146 64 14;
+  --ui-tone-yellow: 133 77 14;
+  --ui-tone-red: 185 28 28;
+  --ui-tone-emerald: 4 120 87;
+}
+
+[data-theme='light'] :is(.ui-panel, .ui-panel-subtle, .ui-panel-strong) {
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.06);
+}
+
+:root[data-theme='light'][data-text-contrast='high'] {
+  --ui-text-primary: 0 0 0;
+  --ui-text-secondary: 26 33 44;
+  --ui-text-control: 26 33 44;
+  --ui-text-heading: 0 0 0;
+  --ui-text-white: 0 0 0;
+  text-shadow: none;
+}
+
+/* Media overlays and opaque accent controls keep white text in either theme. */
+.poster-card, .media-overlay {
+  color-scheme: dark;
+  --ui-text-white: 255 255 255;
+  --ui-text-primary: 229 233 240;
+  --ui-text-secondary: 154 164 181;
+  --ui-text-control: 235 239 245;
+  --ui-text-heading: 255 255 255;
+  --ui-ink: 255 255 255;
+  --ui-accent: 120 180 255;
+  --ui-wash: 0 0 0;
+  --ui-tone-amber: initial;
+  --ui-tone-yellow: initial;
+  --ui-tone-red: initial;
+  --ui-tone-emerald: initial;
+  color: rgb(var(--ui-text-primary));
+}
+.bg-accent, .btn-primary, .btn-danger { --ui-text-white: 255 255 255; }
+
+/* A global opt-in: semantic states retain their colors; disabled controls keep their opacity. */
+[data-text-contrast='high'] {
+  --ui-text-primary: 255 255 255;
+  --ui-text-secondary: 235 239 245;
+  --ui-text-control: 235 239 245;
+  --ui-text-heading: 255 255 255;
+  --ui-secondary-min-alpha: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+}
+[data-text-contrast='high'] :where(button, input, textarea, select) { text-shadow: inherit; }
+
+/* 尊重系统减弱动效偏好：保留透明度/颜色过渡，去掉位移/缩放等运动 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color !important;
+    transition-duration: 100ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply bg-surface text-gray-100 font-sans antialiased;
+  }
+
+  :where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid rgb(var(--ui-accent));
+    outline-offset: 3px;
+  }
+
+  /* 桌面端统一使用细滚动条：内部滚动区域必须让用户看得出仍有内容。 */
+  * { scrollbar-width: thin; scrollbar-color: rgba(154, 164, 181, 0.28) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: rgba(154, 164, 181, 0.22); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+  *::-webkit-scrollbar-thumb:hover { background: rgba(154, 164, 181, 0.42); border: 2px solid transparent; background-clip: padding-box; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 select-none cursor-pointer;
+  }
+  .btn-primary {
+    @apply btn bg-accent hover:opacity-90 text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-surface-hover text-gray-300 hover:text-white;
+  }
+  .btn-danger {
+    @apply btn bg-red-700/80 hover:bg-red-700 text-white;
+  }
+
+  .input {
+    @apply w-full bg-surface-hover border border-border rounded-lg px-3 py-2 text-sm text-gray-100
+           placeholder:text-gray-500 outline-none focus:border-accent transition-colors;
+  }
+
+  .badge {
+    @apply inline-block px-2 py-0.5 rounded text-xs font-medium;
+  }
+  .badge-unwatched  { @apply badge bg-gray-700 text-gray-300; }
+  .badge-watching   { @apply badge bg-blue-700/80 text-blue-200; }
+  .badge-completed  { @apply badge bg-green-800/80 text-green-300; }
+
+  /* Content stays transparent; only overlapping menus/dialogs have a solid surface. */
+  .ui-panel,
+  .ui-panel-subtle,
+  .ui-panel-strong,
+  [class*='backdrop-blur'] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .ui-panel { background-color: var(--ui-panel-bg) !important; }
+  .ui-panel-subtle { background-color: var(--ui-panel-subtle-bg) !important; }
+  .ui-panel-strong { background-color: var(--ui-panel-strong-bg) !important; }
+
+  /* One title surface across pages; content decides its own layout and wrapping. */
+  .page-header { @apply min-w-0 shrink-0 rounded-2xl border border-white/10 p-4; }
+  .page-breadcrumb { @apply min-w-0 shrink-0 rounded-xl border border-white/10 px-3 py-2; }
+}
+
+/* 少数沉浸式区域（海报横滑、短标签条）仍可显式隐藏滚动条。 */
+.no-scrollbar::-webkit-scrollbar { display: none }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none }
+
+/* UI 收口后的通用页面容器与标题层级。 */
+.page-shell { @apply mx-auto flex h-full w-full max-w-[1800px] min-h-0 min-w-0 flex-col gap-4 p-3 sm:p-4 lg:p-6; }
+.page-title { @apply text-xl font-semibold tracking-tight text-white lg:text-2xl; }
+.page-subtitle { @apply mt-1 text-sm text-text-secondary; }
+.section-kicker { @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary/70; }
+
+.poster-season-badge {
+  border-color: rgb(var(--ui-ink) / .18);
+  background: rgb(var(--ui-ink) / .06);
+  color: rgb(var(--ui-text-secondary));
+}
+
+/* Quiet frames: artwork carries the visual weight, actions carry the blue. */
+.page-header, .page-breadcrumb { border-color: rgb(var(--ui-border) / .8); }
+.sidebar-logo, .sidebar-link[aria-current='page'] { box-shadow: none; }
+.library-task-feedback { min-width: 0; }
+.library-task-feedback summary { padding-block: 3px; }
+
+/* Animate the synopsis track so its title rises with it, without resizing the poster. */
+.poster-overlay-spacing {
+  padding: var(--poster-overlay-fade) var(--poster-overlay-gutter) var(--poster-overlay-gutter);
+}
+.poster-shade {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.poster-synopsis-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition-property: grid-template-rows, margin-top, opacity, visibility;
+  transition-duration: 500ms;
+  transition-timing-function: linear;
+}
+@media (hover: hover) and (pointer: fine) {
+  .poster-card[data-synopsis-open='true'] .poster-shade { opacity: 1; }
+}
+.poster-card[data-synopsis-open='true'] .poster-synopsis-reveal {
+  grid-template-rows: 1fr;
+  margin-top: 0.5rem;
+  visibility: visible;
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .poster-selection, .table-row-selection { opacity: 1; }
+}

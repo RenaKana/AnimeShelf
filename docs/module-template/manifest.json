@@ -1,0 +1,10 @@
+{
+  "id": "sample",
+  "name": "示例模块",
+  "version": "1.0.0",
+  "defaultEnabled": true,
+  "requires": [],
+  "optional": [],
+  "routes": [{ "method": "GET", "path": "/api/sample" }],
+  "pages": ["/sample"]
+}

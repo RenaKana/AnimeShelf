@@ -1,0 +1,56 @@
+node_modules/
+.generated/
+dist/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+posters-cache/
+
+# Local package-manager cache and agent bridge self-tests
+.pnpm-store/
+.ai-bridge/
+
+# 工具运行痕迹（会话日志/临时备份）不应入库
+.reasonix/backups/
+.reasonix/tasks/
+.reasonix/attachments/
+.reasonix/desktop-topic-titles.json
+.reasonix/desktop-topic-title-sources.json
+.reasonix/*.json
+
+# Local review artifacts and machine-specific state (not public source)
+/.artifacts/
+/.codex-tmp/
+/.reasonix/
+/.codex/config.toml
+/.claude/settings.local.json
+
+# Generated desktop distributions; package contents are controlled separately
+/dist-electron/
+/release/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+*.log
+
+# Local databases, environment secrets, and signing material
+*.db-journal
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+keystore.properties
+signing.properties

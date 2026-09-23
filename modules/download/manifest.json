@@ -1,0 +1,13 @@
+{
+  "id": "download",
+  "name": "下载",
+  "version": "1.0.0",
+  "defaultEnabled": true,
+  "requires": [],
+  "optional": [],
+  "routes": [
+    { "method": "GET", "path": "/api/download/sources" },
+    { "method": "GET", "path": "/api/download/resources" }
+  ],
+  "pages": ["/download"]
+}

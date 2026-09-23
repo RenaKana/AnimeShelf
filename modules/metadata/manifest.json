@@ -1,0 +1,63 @@
+{
+  "id": "metadata",
+  "requires": [],
+  "defaultEnabled": true,
+  "name": "元数据",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/metadata/search"
+    },
+    {
+      "method": "POST",
+      "path": "/api/metadata/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/api/metadata/image"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/folders/:id/display-metadata"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/refresh-metadata"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/prefer-bangumi-synopsis"
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/:id/clear-metadata"
+    },
+    {
+      "method": "POST",
+      "path": "/api/libraries/:id/match-metadata"
+    },
+    {
+      "method": "GET",
+      "path": "/api/libraries/:id/match-status"
+    },
+    {
+      "method": "POST",
+      "path": "/api/libraries/:id/clear-metadata"
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/backups/poster-repair-status"
+    },
+    {
+      "method": "POST",
+      "path": "/api/settings/repair-posters"
+    },
+    {
+      "method": "POST",
+      "path": "/api/settings/repair-posters/:jobId/retry"
+    }
+  ],
+  "optional": [],
+  "pages": []
+}

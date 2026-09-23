@@ -1,0 +1,36 @@
+.favorite-editor-header { display: flex; flex: none; align-items: flex-start; gap: 14px; padding: 22px 24px; border-bottom: 1px solid rgb(var(--ui-border) / 0.65); }
+.favorite-editor-poster { width: 52px; height: 78px; flex: none; border-radius: 6px; object-fit: cover; }
+.favorite-editor-placeholder { display: grid; place-items: center; background: rgb(var(--ui-surface-hover)); color: rgb(var(--ui-text-secondary)); font-size: 24px; }
+.favorite-editor-header h2 { overflow-wrap: anywhere; line-height: 1.5; }
+.favorite-editor-original { margin-top: 5px; color: rgb(var(--ui-text-secondary)); font-size: 12px; overflow-wrap: anywhere; }
+.favorite-editor-close { flex: none; padding: 4px 8px; font-size: 12px; }
+.favorite-editor-body { display: flex; flex: 1; flex-direction: column; gap: 24px; min-height: 0; overflow: auto; padding: 24px; }
+.favorite-editor-section { display: flex; flex-direction: column; gap: 10px; }
+.favorite-editor-section h3, .favorite-editor-section > label { color: rgb(var(--ui-text-primary)); font-size: 13px; font-weight: 600; }
+.favorite-editor-status { display: flex; flex-wrap: wrap; align-self: flex-start; gap: 4px; border-radius: 8px; padding: 4px; background: rgb(var(--ui-surface-hover) / 0.5); }
+.favorite-editor-status button { min-height: 32px; border: 0; border-radius: 5px; padding: 6px 10px; font-size: 12px; color: rgb(var(--ui-text-secondary)); background: transparent; }
+.favorite-editor-status button[aria-pressed='true'] { color: rgb(var(--ui-text-primary)); background: rgb(var(--ui-accent) / 0.26); }
+.favorite-editor .favorite-editor-synopsis { min-height: 190px; resize: vertical; font-size: 13px; line-height: 1.8; }
+.favorite-editor-tools { padding-top: 20px; border-top: 1px solid rgb(var(--ui-border) / 0.55); }
+.favorite-editor-tool-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.favorite-editor-tool-row .input { flex: 1 1 200px; width: auto; min-width: 0; font-size: 12px; }
+.favorite-editor-tool-row .btn-ghost { flex: none; padding: 8px 10px; font-size: 12px; border: 1px solid rgb(var(--ui-border) / 0.6); }
+.favorite-editor-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 3px; }
+.favorite-editor-links a { padding: 2px 0; color: rgb(var(--ui-text-secondary)); font-size: 12px; text-underline-offset: 3px; }
+.favorite-editor-links a:hover { color: rgb(var(--ui-accent)); text-decoration: underline; }
+.favorite-editor-footer { display: flex; flex: none; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; padding: 14px 24px; border-top: 1px solid rgb(var(--ui-border) / 0.65); }
+.favorite-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.favorite-editor-actions:last-child { margin-left: auto; }
+.favorite-editor-actions button { width: auto; padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.favorite-editor .favorite-editor-find { color: rgb(var(--ui-accent)); }
+.favorite-editor .favorite-editor-delete { color: #fb7185; }
+.favorite-editor .favorite-editor-delete:hover:not(:disabled) { background: rgb(244 63 94 / 0.12); }
+.favorite-editor-message { padding: 10px 12px; border-radius: 6px; color: rgb(var(--ui-text-primary)); background: rgb(var(--ui-accent) / 0.12); font-size: 12px; }
+.favorite-editor-message.is-error { color: #fb7185; background: rgb(244 63 94 / 0.1); }
+.favorite-editor :is(button, input, textarea, select):disabled { cursor: not-allowed; opacity: 0.5; }
+.favorite-editor :is(button, a, input, textarea, select):focus-visible { outline: 2px solid rgb(var(--ui-accent)); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .favorite-editor-header { padding: 16px; gap: 12px; }
+  .favorite-editor-body { padding: 18px 16px; gap: 20px; }
+  .favorite-editor-footer { padding: 12px 16px; }
+}

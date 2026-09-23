@@ -1,0 +1,50 @@
+{
+  "id": "season",
+  "requires": [
+    "metadata"
+  ],
+  "defaultEnabled": true,
+  "name": "追番与心愿单",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/season/calendar"
+    },
+    {
+      "method": "GET",
+      "path": "/api/season/favorites"
+    },
+    {
+      "method": "POST",
+      "path": "/api/season/favorites"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/season/favorites/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/api/season/favorites/:id/poster"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/season/favorites/:id/library-status"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/season/favorites/:id/media-domain"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/season/favorites/:id"
+    }
+  ],
+  "optional": [
+    "media-catalog"
+  ],
+  "pages": [
+    "/season",
+    "/favorites"
+  ]
+}

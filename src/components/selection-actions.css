@@ -1,0 +1,7 @@
+.library-selection-controls { display: grid; grid-template-columns: 58px 168px 62px 80px; align-items: center; gap: 8px; min-height: 36px; max-width: 100%; }
+.library-select-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.library-selection-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.library-selection-controls button { height: 36px; white-space: nowrap; }
+.library-selection-controls button:disabled { opacity: .4; cursor: default; }
+.library-results > .library-selection-controls { flex-shrink: 0; }
+@media (max-width: 540px) { .library-selection-controls { grid-template-columns: 58px minmax(130px,1fr) 62px; } .library-selection-controls > button:last-child { grid-column: 2 / 4; justify-self: end; } }

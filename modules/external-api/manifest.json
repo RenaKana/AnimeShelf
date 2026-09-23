@@ -1,0 +1,35 @@
+{
+  "id": "external-api",
+  "requires": [],
+  "defaultEnabled": true,
+  "name": "外部 API",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/external-access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/external-access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/external-access/tokens"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/external-access/tokens/:id"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/external-access/tokens/:id"
+    }
+  ],
+  "optional": [
+    "media-catalog",
+    "metadata",
+    "season"
+  ],
+  "pages": []
+}

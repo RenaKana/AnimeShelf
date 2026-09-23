@@ -1,0 +1,47 @@
+{
+  "id": "wallpapers",
+  "requires": [],
+  "defaultEnabled": true,
+  "name": "背景与壁纸",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/wallpapers"
+    },
+    {
+      "method": "GET",
+      "path": "/api/wallpapers/web/:token/*"
+    },
+    {
+      "method": "GET",
+      "path": "/api/wallpapers/file"
+    },
+    {
+      "method": "GET",
+      "path": "/api/background/file"
+    },
+    {
+      "method": "POST",
+      "path": "/api/background/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/background/video-preview"
+    },
+    {
+      "method": "GET",
+      "path": "/api/background/video-preview/:id"
+    },
+    {
+      "method": "HEAD",
+      "path": "/api/background/video-preview/:id"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/background/video-preview/:id"
+    }
+  ],
+  "optional": [],
+  "pages": []
+}

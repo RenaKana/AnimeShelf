@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["node", "vitest/globals"] },
+  "include": ["shared", "server", "client", "server.ts", "client.tsx", "__tests__"],
+  "references": []
+}

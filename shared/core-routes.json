@@ -1,0 +1,184 @@
+[
+  { "method": "PUT", "path": "/api/folders/batch/media-domain" },
+  { "method": "GET", "path": "/api/folder-moves/directories" },
+  { "method": "POST", "path": "/api/folder-moves/preview" },
+  { "method": "GET", "path": "/api/folder-moves" },
+  { "method": "POST", "path": "/api/folder-moves" },
+  { "method": "GET", "path": "/api/folder-moves/:id" },
+  { "method": "POST", "path": "/api/folder-moves/:id/cancel" },
+  { "method": "POST", "path": "/api/folder-moves/:id/resume" },
+  { "method": "POST", "path": "/api/folder-moves/:id/retry" },
+  { "method": "POST", "path": "/api/folder-moves/:id/reconcile" },
+  {
+    "method": "GET",
+    "path": "/api/files/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/folders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/folders/:id"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/folders/:id/rename"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/folders/:id/move"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/folders/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/folders/rename-regex"
+  },
+  {
+    "method": "POST",
+    "path": "/api/folders/restore-names"
+  },
+  {
+    "method": "GET",
+    "path": "/api/folders/:id/poster"
+  },
+  {
+    "method": "GET",
+    "path": "/api/libraries"
+  },
+  {
+    "method": "POST",
+    "path": "/api/libraries"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/libraries/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/libraries/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/libraries/:id/scan"
+  },
+  {
+    "method": "GET",
+    "path": "/api/libraries/scan-status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/tags"
+  },
+  {
+    "method": "POST",
+    "path": "/api/tags"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/tags/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/tags/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/tags/link"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/tags/link/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/tags/target/:tagId"
+  },
+  {
+    "method": "GET",
+    "path": "/api/tags/effective"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/system-info"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/backup"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/backups"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/backups/restore"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/backups/upload"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/settings"
+  },
+  {
+    "method": "POST",
+    "path": "/api/play"
+  },
+  {
+    "method": "GET",
+    "path": "/api/modules"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/modules"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health"
+  },
+  {
+    "method": "POST",
+    "path": "/api/service/restart"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/folders/:id/display-name"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/folders/:id/media-domain"
+  },
+  {
+    "method": "GET",
+    "path": "/api/folders/:id/rename-history"
+  },
+  {
+    "method": "POST",
+    "path": "/api/folders/:id/undo-rename"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/folders/:id/relink"
+  },
+  {
+    "method": "POST",
+    "path": "/api/local-files/folder/:id/open"
+  },
+  {
+    "method": "POST",
+    "path": "/api/local-files/file/:id/reveal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/settings/backups/inspect"
+  }
+]

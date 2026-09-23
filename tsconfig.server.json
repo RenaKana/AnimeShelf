@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist/server",
+    "esModuleInterop": true
+  },
+  "include": ["server", "shared", "modules/*/server.ts", "modules/*/server/**/*", ".generated/server-modules.ts", ".generated/modules.ts"],
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
+}
