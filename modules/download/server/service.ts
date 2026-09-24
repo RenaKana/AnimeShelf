@@ -1,4 +1,5 @@
 import type { DownloadResource, ResourcePage, ResourceQuery, SourceId, SourceStatus } from '../shared/types'
+import { ProxyError } from '../../../server/services/proxy'
 import { acgPages, decodeCursor, encodeAcgCursor, encodeCursor } from './security'
 import { createTransport, type ListRequest, type Transport } from './transport'
 import { buildRequest, parsePage, isVerificationPage, ParseError } from './adapters'
@@ -174,6 +175,7 @@ export class DownloadService {
       if (timedOut) return this.result(query.source, { kind: 'error', code: 'timeout', message: '请求超时，可单独重试' })
       if (error instanceof DownloadNetworkError) return this.result(query.source, { kind: 'error', code: error.code, message: error.message })
       if (error instanceof SourceFailure) return this.result(query.source, error.status)
+      if (error instanceof ProxyError) return this.result(query.source, { kind: 'error', code: 'network_policy', message: error.message })
       if (error instanceof ParseError) return this.result(query.source, { kind: 'error', code: 'parse', message: '原站列表格式未识别，不能确认搜索结果' })
       return this.result(query.source, { kind: 'error', code: error instanceof Error && error.message === 'busy' ? 'busy' : 'connection', message: '连接失败或请求繁忙，可单独重试' })
     } finally {

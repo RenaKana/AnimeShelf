@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Settings } from '../../../src/types'
+import { remoteMediaSrc } from '../../../shared/remote-media'
 import { attachVideoPlayback } from './videoPlayback'
 
 function VideoBackground({ src }: { src: string }) {
@@ -23,12 +24,14 @@ export default function AppBackground({ settings }: { settings: Settings }) {
   const src = settings.background_path ?? ''
   const previewSrc = typeof settings.background_preview_url === 'string' && settings.background_preview_url.startsWith('blob:')
     ? settings.background_preview_url : ''
-  const videoPreviewSrc = settings.background_preview_type === 'video' && settings.background_preview_url?.startsWith('/api/background/video-preview/')
-    ? settings.background_preview_url : ''
+  const videoPreviewUrl = settings.background_preview_url ?? ''
+  const videoPreviewSrc = settings.background_preview_type === 'video'
+    && (videoPreviewUrl.startsWith('/api/background/video-preview/') || /^https?:\/\//i.test(videoPreviewUrl))
+    ? remoteMediaSrc(videoPreviewUrl) : ''
   if (type === 'solid') return null
 
-  // 本地绝对路径（盘符或反斜杠开头）经 /api/background/file 代理读取；http(s):// URL 直接用
-  const proxySrc = (s: string) => (/^https?:\/\//i.test(s) ? s : `/api/background/file?p=${encodeURIComponent(s)}`)
+  // 本地绝对路径（盘符或反斜杠开头）经 /api/background/file 代理读取；绝对 HTTP(S) URL 经远程媒体代理读取
+  const proxySrc = (s: string) => (/^https?:\/\//i.test(s) ? remoteMediaSrc(s) : `/api/background/file?p=${encodeURIComponent(s)}`)
 
   const render = () => {
     if (videoPreviewSrc) return <VideoBackground src={videoPreviewSrc} />

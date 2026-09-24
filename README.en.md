@@ -42,6 +42,8 @@ The current interface uses Chinese labels; they are included below to help you f
 
 See the [user guide](docs/USER-GUIDE.md) for detailed steps and limitations. The linked user and development guides are currently in Chinese.
 
+Proxy options are under “设置 → 网络” (Settings → Network): Windows system proxy, manual HTTP(S), or direct. They apply to external services supported by AnimeShelf; local services stay direct, while browser and Wallpaper Engine embedded-page requests remain host-managed.
+
 **File safety:** Changing a display name is different from renaming a folder on disk. Renaming disk folders, moving them or deleting them affects real files. **Deletion does not use the recycle bin.** Check paths before proceeding and back up important media separately.
 
 ## Title information sources and optional setup

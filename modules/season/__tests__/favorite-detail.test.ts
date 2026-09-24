@@ -13,6 +13,10 @@ vi.mock('../../metadata/server/metadata', () => ({
   getTMDBDetail: mocks.getTMDBDetail,
   cachePoster: mocks.cachePoster,
 }))
+vi.mock('../../../server/services/network', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/network')>(),
+  networkFetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}))
 
 const links = [
   { name: '番组计划', url: 'https://bgm.tv/subject/1' },

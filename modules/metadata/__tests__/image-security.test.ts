@@ -5,8 +5,8 @@ import path from 'path'
 
 const mockDnsLookup = vi.hoisted(() => vi.fn())
 const mockGet = vi.hoisted(() => vi.fn())
-const mockLocalProxyFallbacks = vi.hoisted(() => vi.fn())
 const mockImageProxy = vi.hoisted(() => vi.fn())
+const mockResolveProxy = vi.hoisted(() => vi.fn())
 vi.mock('../../../server/services/image-proxy', async importOriginal => ({
   ...await importOriginal<typeof import('../../../server/services/image-proxy')>(),
   getImageProxy: mockImageProxy,
@@ -14,9 +14,9 @@ vi.mock('../../../server/services/image-proxy', async importOriginal => ({
 
 vi.mock('node:dns/promises', () => ({ lookup: mockDnsLookup }))
 vi.mock('../../../server/db/instance', () => ({ db: undefined, settingsDb: { get: vi.fn(() => null) } }))
-vi.mock('../../../server/services/proxy', () => ({
-  getProxy: vi.fn(() => null),
-  getLocalProxyFallbacks: mockLocalProxyFallbacks,
+vi.mock('../../../server/services/proxy', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/proxy')>(),
+  resolveProxy: mockResolveProxy,
 }))
 vi.mock('axios', () => ({
   default: {
@@ -39,7 +39,15 @@ describe('remote image download security', () => {
     mockDnsLookup.mockReset().mockResolvedValue([{ address: '93.184.216.34', family: 4 }])
     mockGet.mockReset()
     mockImageProxy.mockReset().mockReturnValue(null)
-    mockLocalProxyFallbacks.mockReset().mockReturnValue([])
+    mockResolveProxy.mockReset().mockImplementation(() => {
+      const configured = mockImageProxy()
+      if (!configured) return { mode: 'direct', source: 'direct', revision: 'test:direct' }
+      const parsed = new URL(configured)
+      return {
+        mode: 'manual', source: 'manual', revision: `test:${parsed.origin}`,
+        proxy: { protocol: parsed.protocol.slice(0, -1), host: parsed.hostname, port: Number(parsed.port), url: parsed.origin },
+      }
+    })
   })
 
   it('rejects non-http URLs and URLs carrying credentials before DNS or HTTP', async () => {
@@ -132,6 +140,7 @@ describe('remote image download security', () => {
       timeout: 6000,
       proxy: false,
     })
+    expect(mockGet.mock.calls[0][1].httpsAgent.options.lookup).toBeTypeOf('function')
   })
 
   it('rejects an already-aborted request before DNS, including a valid cache hit', async () => {
@@ -202,7 +211,7 @@ describe('remote image download security', () => {
     const errorController = new AbortController()
     const errorRemove = vi.spyOn(errorController.signal, 'removeEventListener')
     mockGet.mockRejectedValueOnce(new Error('offline'))
-    await expect(fetchRemoteImage('https://cleanup-error.example.test/poster.jpg', { signal: errorController.signal })).rejects.toThrow(/代理路径被拒绝|offline/)
+    await expect(fetchRemoteImage('https://cleanup-error.example.test/poster.jpg', { signal: errorController.signal })).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
     expect(errorRemove).toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
 
@@ -220,11 +229,10 @@ describe('remote image download security', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('does not retry a failed direct request through an unpinned proxy', async () => {
-    mockLocalProxyFallbacks.mockReturnValue([{ protocol: 'http', host: '127.0.0.1', port: 7897 }])
+  it('does not retry a failed direct request through another route', async () => {
     mockGet.mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }))
 
-    await expect(fetchRemoteImage('https://proxy-fallback.example.test/poster.jpg')).rejects.toThrow('connection reset')
+    await expect(fetchRemoteImage('https://proxy-fallback.example.test/poster.jpg')).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
     expect(mockGet).toHaveBeenCalledTimes(1)
     expect(mockGet.mock.calls[0][1]).toMatchObject({ proxy: false })
   })
@@ -238,15 +246,20 @@ describe('remote image download security', () => {
     expect(isValidPosterImage(oversized)).toBe(false)
   })
 
-  it('uses configured CONNECT only for built-in CDNs, without resolving fake IPs locally', async () => {
+  it('lets the selected proxy resolve trusted CDN hosts while keeping DNS checks for untrusted hosts', async () => {
     mockImageProxy.mockReturnValue('http://127.0.0.1:7890')
-    mockDnsLookup.mockResolvedValue([{ address: '198.18.0.43', family: 4 }])
     mockGet.mockResolvedValue({ status: 200, headers: { 'content-type': 'image/jpeg' }, data: JPEG_IMAGE })
     await expect(fetchRemoteImage('https://lain.bgm.tv/test-proxy.jpg', { force: true })).resolves.toMatchObject({ data: JPEG_IMAGE })
     expect(mockDnsLookup).not.toHaveBeenCalled()
     expect(mockGet.mock.calls[0][1]).toMatchObject({ proxy: false, maxRedirects: 0, timeout: 6000, httpsAgent: expect.anything() })
     expect(mockGet.mock.calls[0][1]).not.toHaveProperty('lookup')
+    expect(mockResolveProxy).toHaveBeenCalledWith('https://lain.bgm.tv/test-proxy.jpg')
+
+    mockDnsLookup.mockResolvedValueOnce([{ address: '10.0.0.1', family: 4 }])
     await expect(fetchRemoteImage('https://not-a-cdn.test/test.jpg')).rejects.toThrow(/私人/)
+    expect(mockDnsLookup).toHaveBeenCalledWith('not-a-cdn.test', { all: true, verbatim: true })
+    expect(mockDnsLookup).toHaveBeenCalledTimes(1)
+    expect(mockResolveProxy).toHaveBeenCalledTimes(2)
     expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
@@ -257,7 +270,7 @@ describe('remote image download security', () => {
       const file = path.join(directory, 'bg_99.jpg')
       fs.writeFileSync(file, JPEG_IMAGE)
       mockGet.mockRejectedValueOnce(Object.assign(new Error('certificate failed'), { code: 'CERT_HAS_EXPIRED' }))
-      await expect(cachePoster('https://lain.bgm.tv/cert.jpg', 'bg_99', { directory, force: true, throwOnError: true })).rejects.toMatchObject({ code: 'CERT_HAS_EXPIRED' })
+      await expect(cachePoster('https://lain.bgm.tv/cert.jpg', 'bg_99', { directory, force: true, throwOnError: true })).rejects.toMatchObject({ code: 'NETWORK_TLS_FAILED' })
       expect(fs.readFileSync(file)).toEqual(JPEG_IMAGE)
       expect(mockGet).toHaveBeenCalledTimes(1)
       mockGet.mockResolvedValueOnce({ status: 302, headers: { location: 'http://127.0.0.1/private' }, data: JPEG_IMAGE })

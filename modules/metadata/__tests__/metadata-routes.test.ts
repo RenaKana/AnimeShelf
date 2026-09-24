@@ -11,15 +11,16 @@ import { providerRateLimitGate } from '../../../server/services/provider-rate-li
 const mockedInstance = vi.hoisted(() => ({ db: undefined as any, settingsDb: { get: vi.fn<() => string | null>(() => null) } }))
 const mockDnsLookup = vi.hoisted(() => vi.fn(async () => [{ address: '151.101.1.69', family: 4 }]))
 const mockGet = vi.hoisted(() => vi.fn())
+const mockResolveProxy = vi.hoisted(() => vi.fn(() => ({ mode: 'direct', source: 'direct', revision: 'test:direct' })))
 vi.mock('../../../server/db/instance', () => mockedInstance)
 vi.mock('../../../server/services/image-proxy', async importOriginal => ({
   ...await importOriginal<typeof import('../../../server/services/image-proxy')>(),
   getImageProxy: () => null,
 }))
 
-vi.mock('../../../server/services/proxy', () => ({
-  getProxy: vi.fn(() => null),
-  getLocalProxyFallbacks: vi.fn(() => []),
+vi.mock('../../../server/services/proxy', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/proxy')>(),
+  resolveProxy: mockResolveProxy,
 }))
 
 vi.mock('axios', () => {
@@ -46,6 +47,7 @@ describe('metadata media-domain routes', () => {
     mockedInstance.settingsDb.get.mockReset().mockReturnValue(null)
     mockPost.mockReset()
     mockGet.mockReset()
+    mockResolveProxy.mockReset().mockReturnValue({ mode: 'direct', source: 'direct', revision: 'test:direct' })
     mockDnsLookup.mockReset().mockResolvedValue([{ address: '151.101.1.69', family: 4 }])
     const app = express()
     app.use(express.json())
@@ -83,9 +85,9 @@ describe('metadata media-domain routes', () => {
   it('returns Retry-After and does not cache a 429 as a successful empty search', async () => {
     mockedInstance.settingsDb.get.mockReturnValue('test-key')
     const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'Retry-After': '10' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ id: 123, media_type: 'movie', title: 'Synthetic', genre_ids: [16] }] }), { status: 200 }))
+    mockGet
+      .mockRejectedValueOnce({ response: { status: 429, headers: { 'Retry-After': '10' } } })
+      .mockResolvedValueOnce({ data: { results: [{ id: 123, media_type: 'movie', title: 'Synthetic', genre_ids: [16] }] } })
     const query = '/api/metadata/search?q=rate-limit-route-fixture&source=tmdb'
     const first = await request(query)
     expect(first.status).toBe(429)
@@ -93,13 +95,12 @@ describe('metadata media-domain routes', () => {
     expect(await first.json()).toMatchObject({ code: 'SOURCE_RATE_LIMITED', retryAfterSeconds: 10 })
     const blocked = await request(query)
     expect(blocked.status).toBe(429)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockGet).toHaveBeenCalledTimes(1)
     clock.mockReturnValue(1_010_001)
     const recovered = await request(query)
     expect(recovered.status).toBe(200)
     expect(await recovered.json()).toMatchObject([{ tmdbId: 123 }])
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(mockGet).toHaveBeenCalledTimes(2)
   })
 
   it('keeps cross-domain candidates available for a manually selected target folder', async () => {

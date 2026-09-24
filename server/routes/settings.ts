@@ -10,6 +10,7 @@ import { withLibraryMaintenance } from '../services/library-maintenance'
 import { isOwnerRequest } from '../core/owner-request'
 import { afterDataRestore, invalidateLibraryMatches } from '../core/extensions'
 import { refreshLibraryScanning } from '../services/library-scan-coordinator'
+import { getProxyStatus, invalidateProxySettings, validateProxySettings } from '../services/proxy'
 
 
 const router = Router()
@@ -39,6 +40,17 @@ function publicSettings(): Record<string, string> {
     const saved = settings[key]
     delete settings[key]
     settings[configuredKey] = saved?.trim() ? '1' : '0'
+  }
+  if (settings.proxy_url?.trim()) {
+    try {
+      const raw = settings.proxy_url
+      const url = new URL(raw.includes('://') ? raw : 'http://' + raw)
+      if (url.username || url.password) throw new Error('Proxy credentials are private')
+    } catch {
+      if (!settings.proxy_mode) settings.proxy_mode = 'manual'
+      settings.proxy_url_configured = '1'
+      delete settings.proxy_url
+    }
   }
   // Legacy unpublished settings stay in storage, but never in public configuration responses.
   for (const key of Object.keys(settings)) {
@@ -141,6 +153,16 @@ router.post('/backups/inspect', async (req, res) => {
 
 router.post('/backups/upload', (_req, res) => res.status(409).json({ error: '请先上传到恢复预检，再确认应用', code: 'RESTORE_INSPECTION_REQUIRED' }))
 
+router.get('/proxy-status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  try {
+    invalidateProxySettings()
+    res.json(getProxyStatus())
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '代理状态读取失败', code: error.code || 'PROXY_STATUS_FAILED' })
+  }
+})
+
 // Explicit root routes prevent disabled feature URLs falling through to generic settings.
 router.get('/', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store')
@@ -149,6 +171,21 @@ router.get('/', (_req, res) => {
 router.put('/', (req, res) => {
   if (!isRecord(req.body)) return res.status(400).json({ error: '设置格式无效', code: 'SETTINGS_INVALID' })
   const body = req.body
+  const proxyKeys = ['proxy_mode', 'proxy_url'] as const
+  const hasProxySettings = proxyKeys.some(key => Object.prototype.hasOwnProperty.call(body, key))
+  if (hasProxySettings) {
+    const networkPatch: Record<string, string> = {}
+    try {
+      for (const key of proxyKeys) {
+        if (!Object.prototype.hasOwnProperty.call(body, key)) continue
+        if (typeof body[key] !== 'string') throw Object.assign(new Error('代理字段格式无效'), { code: 'PROXY_CONFIG_INVALID' })
+        networkPatch[key] = body[key] as string
+      }
+      validateProxySettings({ ...settingsDb.getAll(), ...networkPatch })
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message || '代理设置无效', code: error.code || 'PROXY_SETTINGS_INVALID' })
+    }
+  }
   if (Object.keys(body).some(key => key.startsWith('download_sources'))) {
     return res.status(400).json({ error: '下载来源使用内置规则，不支持修改站点地址', code: 'SETTINGS_INVALID' })
   }
@@ -178,6 +215,7 @@ router.put('/', (req, res) => {
     settingsDb.set(key, String(value))
   }
   if (['everything_url', 'auto_scan', 'scan_on_startup'].some(key => Object.prototype.hasOwnProperty.call(body, key))) refreshLibraryScanning(db)
+  if (hasProxySettings) invalidateProxySettings()
   res.json({ ok: true })
 })
 

@@ -22,7 +22,7 @@ export type SourceStatusKind = 'success' | 'restricted' | 'rate_limited' | 'erro
 export interface SourceStatus {
   kind: SourceStatusKind
   message: string
-  code?: 'timeout' | 'connection' | 'parse' | 'http' | 'busy' | 'unsafe_target' | 'proxy_unsupported'
+  code?: 'network_policy' | 'timeout' | 'connection' | 'parse' | 'http' | 'busy' | 'unsafe_target' | 'proxy_unsupported'
   retryAt?: string
 }
 export interface ResourcePage {

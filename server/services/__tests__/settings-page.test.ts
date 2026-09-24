@@ -21,4 +21,15 @@ describe('settings page organization', () => {
     expect(source).toContain('<section id="settings-custom-tags"')
     expect(source).toContain('href={`#${id}`}')
   })
+
+  it('places core network settings in the shared navigation and content list', () => {
+    const general = source.indexOf("id: 'settings-general'")
+    const network = source.indexOf("id: 'settings-network', label: '网络'")
+    const appearance = source.indexOf("id: 'settings-appearance'")
+
+    expect(source).toContain("from '../components/settings/NetworkSettings'")
+    expect(network).toBeGreaterThan(general)
+    expect(network).toBeLessThan(appearance)
+    expect(source).toContain('<NetworkSettings />')
+  })
 })

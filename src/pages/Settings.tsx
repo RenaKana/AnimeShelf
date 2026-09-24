@@ -9,6 +9,7 @@ import LibraryEditDialog from '../components/LibraryEditDialog'
 
 import DataCredits from '../components/settings/DataCredits'
 import BackupRestorePanel from '../components/settings/BackupRestorePanel'
+import NetworkSettings from '../components/settings/NetworkSettings'
 
 // 正则重命名预设模板：点击填入正则框（可继续手改）
 // 标准命名示例：[T.H.X&VCB-Studio&Eupho] 冰菓 (Hyouka) [2012]
@@ -129,6 +130,9 @@ export default function Settings({ onLibrariesChange, onBackgroundPreview }: { o
           </label>
         </section>
       ),
+    },
+    {
+      id: 'settings-network', label: '网络', content: <NetworkSettings />,
     },
     {
       id: 'settings-appearance', label: '外观', content: (

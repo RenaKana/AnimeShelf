@@ -1,9 +1,8 @@
-import { getProxy } from '../../../server/services/proxy'
-import { settingsDb } from '../../../server/db/instance'
+import { getProxy, parseProxy, type ProxyConfig } from '../../../server/services/proxy'
 import type { SourceId } from '../shared/types'
 import { sourceInfo } from '../shared/sources'
 import { requestUrl } from './security'
-import { DownloadNetworkError, resolvePublic, sendPinned, type PinnedSend } from './network'
+import { DownloadNetworkError, resolvePublic, sendPinned, sendProxied, type PinnedSend } from './network'
 import { downloadRequestPacer, type DownloadRequestPacer } from './request-pacing'
 
 export interface ListRequest { source: SourceId; baseUrl: string; url: string; method: 'GET' | 'POST'; body?: unknown }
@@ -11,22 +10,24 @@ export interface ListResponse { status: number; body: string; retryAfter?: strin
 export type Transport = (request: ListRequest, signal: AbortSignal) => Promise<ListResponse>
 
 export function createTransport(options: {
-  send?: PinnedSend; resolve?: typeof resolvePublic; proxy?: () => unknown; pacer?: DownloadRequestPacer
+  send?: PinnedSend; resolve?: typeof resolvePublic; proxy?: (url?: string) => unknown; sendProxy?: typeof sendProxied; pacer?: DownloadRequestPacer
 } = {}): Transport {
   const send = options.send ?? sendPinned
   const resolve = options.resolve ?? resolvePublic
   const pacer = options.pacer ?? downloadRequestPacer
-  const proxy = options.proxy ?? (() => getProxy() || settingsDb.get('proxy_url')?.trim()
-    || ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy'].some(key => Boolean(process.env[key])))
+  const proxy = options.proxy ?? getProxy
+  const sendProxy = options.sendProxy ?? sendProxied
   return async (request, signal) => {
     if (request.baseUrl !== sourceInfo(request.source)?.url) throw new DownloadNetworkError('unsafe_target', '下载请求只能访问内置来源')
     let url = requestUrl(request.source, request.url, request.method, request.baseUrl)
-    if (proxy()) throw new DownloadNetworkError('proxy_unsupported', '下载来源暂不支持当前代理的安全目标校验；未发起请求，也未改为直连')
+    const selected = proxy(url.href) as ProxyConfig | null
+    const selectedProxy = selected ? parseProxy(selected.url ?? selected.protocol + '://' + (selected.host.includes(':') ? '[' + selected.host + ']' : selected.host) + ':' + selected.port) : null
     for (let hop = 0; hop <= 3; hop++) {
       signal.throwIfAborted()
-      const address = await resolve(url.hostname, signal)
+      const address = selectedProxy ? null : await resolve(url.hostname, signal)
       signal.throwIfAborted()
-      const response = await pacer.send(request.source, signal, () => send(url, request, address, signal))
+      const response = await pacer.send(request.source, signal, () => selectedProxy
+        ? sendProxy(url, request, selectedProxy, signal) : send(url, request, address!, signal))
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.location
         if (typeof location !== 'string' || hop === 3) throw new Error('Invalid redirect')

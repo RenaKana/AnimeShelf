@@ -5,6 +5,7 @@ import type { MediaDomain, MediaDomainFields } from '../../../shared/media-domai
 import MediaDomainControl from '@/components/MediaDomainControl'
 import { useModuleEnabled } from '@/modules/registry'
 import { wishlistDownloadPath } from '../../../shared/download-navigation'
+import { remoteMediaSrc } from '../../../shared/remote-media'
 import { api } from './api'
 import { DAY_LABELS } from './constants'
 import { readNumberPref, readStringPref, useNumberPref, UI_PREF_KEYS, writePref } from '@/lib/uiPreferences'
@@ -278,7 +279,7 @@ export function EnhancedFavCard({ f, cardW, fontScale, synopsisAlpha, animDur, o
       style={{ fontSize: `${13 * fontScale}px` }}>
       <button type="button" data-favorite-edit={f.item_id} className="favorite-poster-art media-overlay absolute inset-0 z-0 h-full w-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent" onClick={event => { if (!hasSurfaceSelection(event.currentTarget.parentElement!)) onEdit(f) }} aria-label={`编辑 ${title}`} title="打开编辑面板">
         {f.image && !imageFailed ? (
-          <img src={f.image} alt={title} loading="lazy" onError={() => setImageFailed(true)}
+          <img src={remoteMediaSrc(f.image)} alt={title} loading="lazy" onError={() => setImageFailed(true)}
             className="h-full w-full object-cover object-top" />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_35%_20%,rgb(var(--ui-accent)/0.25),transparent_42%),linear-gradient(145deg,#202838,#111722)] p-4">
@@ -979,7 +980,7 @@ export default function FavoritesView() {
             onMouseDown={event => event.stopPropagation()}
           >
             <header className="favorite-editor-header">
-              {editing.image ? <img src={editing.image} alt="当前海报" className="favorite-editor-poster" />
+              {editing.image ? <img src={remoteMediaSrc(editing.image)} alt="当前海报" className="favorite-editor-poster" />
                 : <div className="favorite-editor-poster favorite-editor-placeholder" aria-hidden="true">{(editing.title_zh || editing.title).slice(0, 1)}</div>}
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-accent">编辑心愿单</p>

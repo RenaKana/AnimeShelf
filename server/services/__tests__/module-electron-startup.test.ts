@@ -12,6 +12,18 @@ const { waitReady } = require('../../../electron/backend-ready.cjs') as { waitRe
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('desktop module host startup', () => {
+  it('probes local health independently of the global fetch route', async () => {
+    const globalFetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('global proxy unavailable'))
+    const server = createServer((_request, response) => response.end('ok'))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      expect(await waitReady((server.address() as { port: number }).port, 1000)).toBe(true)
+      expect(globalFetch).not.toHaveBeenCalled()
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
   it('bounds a health probe even when the backend accepts but never responds', async () => {
     const server = createServer(() => {})
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -44,6 +56,7 @@ describe('desktop module host startup', () => {
         return false
       } },
       './external-links.cjs': { installExternalLinks: vi.fn() },
+      './proxy-session.cjs': { startExternalProxySync: vi.fn() },
     }
     vm.runInNewContext(readFileSync(resolve('electron/main.cjs'), 'utf8'), {
       require: (name: string) => {

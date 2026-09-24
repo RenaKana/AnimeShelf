@@ -44,16 +44,19 @@ describe('download URL and input boundaries', () => {
     }
   })
 
-  it('rejects configured proxy paths before any direct request', async () => {
+  it('uses a configured proxy without local target DNS or a direct request, including failure', async () => {
     const send = vi.fn()
     const resolve = vi.fn()
     const proxy = vi.fn(() => ({ protocol: 'http' as const, host: '127.0.0.1', port: 7897 }))
-    const transport = createTransport({ send: send as never, resolve: resolve as never, proxy })
-    await expect(transport({ source: 'acgrip', baseUrl: builtinAcgOrigin, url: `${builtinAcgOrigin}1`, method: 'GET' }, new AbortController().signal))
-      .rejects.toMatchObject({ code: 'proxy_unsupported' })
+    const sendProxy = vi.fn().mockResolvedValueOnce({ status: 200, body: 'proxy result' }).mockRejectedValueOnce(new Error('proxy unavailable'))
+    const transport = createTransport({ send: send as never, resolve: resolve as never, proxy, sendProxy })
+    const request = { source: 'acgrip' as const, baseUrl: builtinAcgOrigin, url: `${builtinAcgOrigin}1`, method: 'GET' as const }
+    expect(await transport(request, new AbortController().signal)).toMatchObject({ body: 'proxy result' })
+    await expect(transport(request, new AbortController().signal)).rejects.toThrow('proxy unavailable')
     expect(send).not.toHaveBeenCalled()
     expect(resolve).not.toHaveBeenCalled()
-    expect(proxy).toHaveBeenCalledOnce()
+    expect(proxy).toHaveBeenCalledTimes(2)
+    expect(sendProxy).toHaveBeenCalledTimes(2)
   })
 
   it('rejects a substituted origin before DNS, proxy selection or network access', async () => {

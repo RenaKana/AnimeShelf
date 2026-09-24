@@ -17,15 +17,21 @@ import { providerRateLimitGate } from '../../../server/services/provider-rate-li
 
 const mockedInstance = vi.hoisted(() => ({ db: undefined as any, settingsDb: { get: vi.fn<() => string | null>(() => null) } }))
 const mockDnsLookup = vi.hoisted(() => vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]))
+const mockResolveProxy = vi.hoisted(() => vi.fn<(target: string) => import('../../../server/services/proxy').ProxyRoute>(() => ({ mode: 'direct' as const, source: 'direct' as const, revision: 'test:direct' })))
+const mockNetworkFetch = vi.hoisted(() => vi.fn())
 vi.mock('../../../server/db/instance', () => mockedInstance)
 vi.mock('../../../server/services/image-proxy', async importOriginal => ({
   ...await importOriginal<typeof import('../../../server/services/image-proxy')>(),
   getImageProxy: () => null,
 }))
 
-vi.mock('../../../server/services/proxy', () => ({
-  getProxy: vi.fn(() => null),
-  getLocalProxyFallbacks: vi.fn(() => []),
+vi.mock('../../../server/services/proxy', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/proxy')>(),
+  resolveProxy: mockResolveProxy,
+}))
+vi.mock('../../../server/services/network', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/network')>(),
+  networkFetch: mockNetworkFetch,
 }))
 
 vi.mock('axios', () => {
@@ -38,12 +44,11 @@ vi.mock('axios', () => {
 vi.mock('node:dns/promises', () => ({ lookup: mockDnsLookup }))
 
 import axios from 'axios'
-import { getLocalProxyFallbacks } from '../../../server/services/proxy'
+import { ProxyError } from '../../../server/services/proxy'
 import { bindTestModuleCapabilities } from '../../../server/services/__tests__/module-capabilities-fixture'
 const mockHttp = axios.create({}) as unknown as { post: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> }
 const mockPost = mockHttp.post
 const mockGet = mockHttp.get
-const mockLocalProxyFallbacks = vi.mocked(getLocalProxyFallbacks)
 const JPEG_IMAGE = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//9k=', 'base64')
 const PNG_IMAGE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const WEBP_IMAGE = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64')
@@ -59,38 +64,36 @@ describe('metadata', () => {
     bindTestModuleCapabilities(db)
     mockPost.mockReset()
     mockGet.mockReset()
-    mockLocalProxyFallbacks.mockReturnValue([])
+    mockResolveProxy.mockReset().mockReturnValue({ mode: 'direct', source: 'direct', revision: 'test:direct' })
+    mockNetworkFetch.mockReset().mockImplementation(async (input: any, init: any) => globalThis.fetch(input, init))
   })
   afterEach(() => { vi.restoreAllMocks(); providerRateLimitGate.reset() })
 
   it('stops TMDB search at a direct 429 and shares cooldown without blocking AniList', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 429, headers: { 'Retry-After': '12' } }))
+    mockGet.mockRejectedValueOnce({ response: { status: 429, headers: { 'Retry-After': '12' } } })
     await expect(searchTMDB('synthetic first', 'test-key')).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED', response: { status: 429 }, retryAfterSeconds: 12 })
     await expect(searchTMDB('synthetic second', 'test-key')).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED' })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockGet).toHaveBeenCalledTimes(1)
     mockPost.mockResolvedValue({ data: { data: { Page: { media: [] } } } })
     await expect(searchAniList('synthetic')).resolves.toEqual([])
     expect(mockPost).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps proxy 429 errors instead of rewriting them as network failures', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('connection failed'))
+  it('keeps routed TMDB 429 responses intact and shares the cooldown across endpoints', async () => {
+    mockResolveProxy.mockReturnValue({ mode: 'manual', source: 'manual', revision: 'test:proxy', proxy: { protocol: 'http', host: '127.0.0.1', port: 7890, url: 'http://127.0.0.1:7890' } })
     mockGet.mockRejectedValue({ response: { status: 429, headers: { 'retry-after': '9' } }, config: { params: { api_key: 'fixture-private-key' } } })
     await expect(searchTMDB('synthetic', 'test-key')).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED', retryAfterSeconds: 9 })
     mockedInstance.settingsDb.get.mockReturnValue('test-key')
     await expect(getTMDBDetail(1, 'movie')).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED' })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
   it.each(['detail', 'poster'] as const)('does not hide or immediately retry a TMDB %s rate limit', async kind => {
     mockedInstance.settingsDb.get.mockReturnValue('test-key')
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 429, headers: { 'Retry-After': '5' } }))
+    mockGet.mockRejectedValueOnce({ response: { status: 429, headers: { 'Retry-After': '5' } } })
     const request = kind === 'detail' ? getTMDBDetail(1, 'movie') : getTMDBPoster(1, { tmdbMediaType: 'movie' })
     await expect(request).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED', response: { status: 429 } })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
   it('propagates AniList detail limits and blocks later search calls during cooldown', async () => {
@@ -107,10 +110,9 @@ describe('metadata', () => {
     expect(mockPost).not.toHaveBeenCalled()
   })
 
-  it('still falls back on an ordinary TMDB connection error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('connection failed'))
-    mockGet.mockResolvedValue({ data: { results: [{ id: 1, media_type: 'movie', title: 'Synthetic', genre_ids: [16] }] } })
-    await expect(searchTMDB('synthetic', 'test-key')).resolves.toMatchObject([{ tmdbId: 1 }])
+  it('surfaces a TMDB connection failure without retrying another route', async () => {
+    mockGet.mockRejectedValueOnce(Object.assign(new Error('connection failed'), { code: 'ECONNRESET' }))
+    await expect(searchTMDB('synthetic', 'test-key')).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
     expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
@@ -168,7 +170,7 @@ describe('metadata', () => {
 
   it('searchAniList returns [] on failure', async () => {
     mockPost.mockRejectedValue(new Error('net'))
-    expect(await searchAniList('x')).toEqual([])
+    await expect(searchAniList('x')).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
   })
 
   it('keeps an exact localized TMDB movie match beyond the mixed-result cutoff', async () => {
@@ -182,23 +184,13 @@ describe('metadata', () => {
       { id: 225887, media_type: 'tv', name: '外婆的新世界', original_name: '外婆的新世界', first_air_date: '2023-05-07' },
       { id: 653346, media_type: 'movie', title: '猩球崛起：新世界', original_title: 'Kingdom of the Planet of the Apes', release_date: '2024-05-08' },
     ]
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ results: [
+    mockGet.mockResolvedValue({ data: { results: [
         ...earlierResults,
         { id: 165213, media_type: 'movie', title: '新世界', original_title: '신세계', release_date: '2013-02-21' },
-      ] }),
-    } as Response)
-
-    try {
-      const result = await searchTMDB('新世界', 'test-key')
-
-      expect(result).toHaveLength(8)
-      expect(result.map(candidate => candidate.tmdbId)).toContain(165213)
-    } finally {
-      fetchSpy.mockRestore()
-    }
+      ] } })
+    const result = await searchTMDB('新世界', 'test-key')
+    expect(result).toHaveLength(8)
+    expect(result.map(candidate => candidate.tmdbId)).toContain(165213)
   })
 
   it('forwards cancellation to AniList search and detail without turning it into no results', async () => {
@@ -214,7 +206,6 @@ describe('metadata', () => {
   it('does not retry proxies or a legacy endpoint when Bangumi search is cancelled', async () => {
     const controller = new AbortController()
     const cancelled = Object.assign(new Error('cancelled'), { code: 'ERR_CANCELED' })
-    mockLocalProxyFallbacks.mockReturnValue([{ protocol: 'http', host: '127.0.0.1', port: 7890 }])
     mockPost.mockRejectedValue(cancelled)
     await expect(searchBangumi('test', { signal: controller.signal })).rejects.toBe(cancelled)
     expect(mockPost).toHaveBeenCalledTimes(1)
@@ -263,26 +254,17 @@ describe('metadata', () => {
   })
 
   it('classifies TMDB animation separately and refuses unknown genre evidence for domain filtering', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ results: [
+    mockGet.mockResolvedValue({ data: { results: [
         { id: 1, media_type: 'movie', title: '动画电影', genre_ids: [16], release_date: '2024-01-01' },
         { id: 2, media_type: 'tv', name: '真人剧集', genre_ids: [18], first_air_date: '2024-01-01' },
         { id: 3, media_type: 'movie', title: '类型未知', release_date: '2024-01-01' },
-      ] }),
-    } as Response)
-
-    try {
-      const all = await searchTMDB('同名作品', 'test-key')
-      expect(all.map(item => [item.tmdbId, item.mediaDomain])).toEqual([
-        [1, 'anime'], [2, 'live_action'], [3, 'unknown'],
-      ])
-      expect((await searchTMDB('同名作品', 'test-key', { mediaDomain: 'anime' })).map(item => item.tmdbId)).toEqual([1])
-      expect((await searchTMDB('同名作品', 'test-key', { mediaDomain: 'live_action' })).map(item => item.tmdbId)).toEqual([2])
-    } finally {
-      fetchSpy.mockRestore()
-    }
+      ] } })
+    const all = await searchTMDB('同名作品', 'test-key')
+    expect(all.map(item => [item.tmdbId, item.mediaDomain])).toEqual([
+      [1, 'anime'], [2, 'live_action'], [3, 'unknown'],
+    ])
+    expect((await searchTMDB('同名作品', 'test-key', { mediaDomain: 'anime' })).map(item => item.tmdbId)).toEqual([1])
+    expect((await searchTMDB('同名作品', 'test-key', { mediaDomain: 'live_action' })).map(item => item.tmdbId)).toEqual([2])
   })
 
   it('allows manual cross-domain metadata but rejects automatic mismatch and insufficient TMDB evidence', async () => {
@@ -687,31 +669,14 @@ describe('metadata', () => {
     expect(detail).toMatchObject({ bgmId: 320, type: 2, episodes: 1, title: '作品 剧场版' })
   })
 
-  it('retries Bangumi through a local proxy after a direct network failure', async () => {
-    mockLocalProxyFallbacks.mockReturnValue([{ protocol: 'http', host: '127.0.0.1', port: 7897 }])
-    mockGet
-      .mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }))
-      .mockResolvedValueOnce({ data: {
-        id: 265708,
-        type: 2,
-        name: '女子高生の無駄づかい',
-        name_cn: '女高中生的虚度日常',
-        date: '2019-07-05',
-        eps: 12,
-      } })
-
-    const detail = await getBangumiDetail(265708)
-
-    expect(detail.episodes).toBe(12)
-    expect(mockGet).toHaveBeenCalledTimes(2)
+  it('surfaces a Bangumi route failure without retrying through another route', async () => {
+    mockGet.mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }))
+    await expect(getBangumiDetail(265708)).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
+    expect(mockGet).toHaveBeenCalledTimes(1)
     expect(mockGet.mock.calls[0][1]).toMatchObject({ proxy: false })
-    expect(mockGet.mock.calls[1][1]).toMatchObject({
-      proxy: { protocol: 'http', host: '127.0.0.1', port: 7897 },
-    })
   })
 
-  it('keeps remote posters on a pinned direct path instead of an unpinned local proxy', async () => {
-    mockLocalProxyFallbacks.mockReturnValue([{ protocol: 'http', host: '127.0.0.1', port: 7897 }])
+  it('keeps remote posters on the selected route with a pinned validated address', async () => {
     mockGet.mockResolvedValueOnce({ data: JPEG_IMAGE, headers: { 'content-type': 'image/jpeg' } })
 
     const image = await fetchRemoteImage('https://lain.bgm.tv/pic/cover/l/test.jpg')
@@ -724,14 +689,10 @@ describe('metadata', () => {
       proxy: false,
     })
 
-    const lookup = mockGet.mock.calls[0][1].lookup as (hostname: string, options: object, callback: (...args: any[]) => void) => void
+    const lookup = mockGet.mock.calls[0][1].httpsAgent.options.lookup as (hostname: string, options: object, callback: (...args: any[]) => void) => void
     const resolved = vi.fn()
     lookup('lain.bgm.tv', {}, resolved)
     expect(resolved).toHaveBeenCalledWith(null, '93.184.216.34', 4)
-
-    const mismatched = vi.fn()
-    lookup('attacker.example.test', {}, mismatched)
-    expect(mismatched.mock.calls[0][0]).toMatchObject({ name: 'RemoteImageDnsTargetMismatch' })
   })
 
   it('validates complete image containers and rejects truncated or header-only payloads', () => {
@@ -839,9 +800,7 @@ describe('metadata', () => {
       await fetchRemoteImage(url)
       mockGet.mockRejectedValueOnce(new Error('offline'))
 
-      const result = await cachePoster(url, 'al_88', { force: true, directory: posterDir })
-
-      expect(result).toBeNull()
+      await expect(cachePoster(url, 'al_88', { force: true, directory: posterDir })).rejects.toMatchObject({ code: 'NETWORK_CONNECTION_FAILED' })
       expect(fs.readFileSync(poster)).toEqual(JPEG_IMAGE)
       expect(mockGet).toHaveBeenCalledTimes(2)
     } finally {

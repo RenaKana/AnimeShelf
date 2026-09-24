@@ -18,7 +18,6 @@ export interface MetadataSettingsDraft {
 export function metadataSettingsPayload(draft: MetadataSettingsDraft): Settings {
   const patch: Settings = {
     auto_match_metadata: draft.settings.auto_match_metadata ?? '',
-    proxy_url: draft.settings.proxy_url ?? '',
   }
   if (draft.clearTmdbKey) patch.clear_tmdb_key = '1'
   else if (draft.tmdbKeyDraft.trim()) patch.tmdb_key = draft.tmdbKeyDraft.trim()
@@ -71,7 +70,7 @@ export default function MetadataSettings({ onRefresh }: ModuleSettingsProps) {
   }
   return <section id="settings-metadata" className="ui-panel scroll-mt-4 space-y-3 rounded-2xl border border-white/10 bg-[#111722]/88 p-4 shadow-[0_14px_36px_rgba(0,0,0,0.14)] backdrop-blur-lg">
     <div className="flex items-center justify-between gap-3">
-      <div><h2 className="font-semibold">元数据 / 网络</h2><p className="mt-1 text-xs text-text-secondary">配置匹配数据源，并控制扫描后的自动匹配。</p></div>
+      <div><h2 className="font-semibold">元数据</h2><p className="mt-1 text-xs text-text-secondary">配置匹配数据源，并控制扫描后的自动匹配。</p></div>
       <Button size="sm" disabled={loading || saving} onClick={() => { void save() }}>{saving ? '保存中…' : '保存'}</Button>
     </div>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(settings.auto_match_metadata ?? '0') === '1'} disabled={loading || saving} onChange={event => set('auto_match_metadata', event.target.checked ? '1' : '0')} /> 扫描时自动匹配元数据</label>
@@ -83,7 +82,6 @@ export default function MetadataSettings({ onRefresh }: ModuleSettingsProps) {
       <SensitiveInput aria-label="Bangumi Access Token" className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm" placeholder={settings.bangumi_token_configured === '1' ? '已保存；留空保持不变' : 'bgm.tv 登录后获取 Access Token'} value={bangumiTokenDraft} disabled={loading || saving || clearBangumiToken} resetKey={saving ? 'saving' : settings.bangumi_token_configured} onChange={event => { setBangumiTokenDraft(event.target.value); if (event.target.value) setClearBangumiToken(false) }} />
       {settings.bangumi_token_configured === '1' && <span className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={clearBangumiToken} disabled={loading || saving} onChange={event => { setClearBangumiToken(event.target.checked); if (event.target.checked) setBangumiTokenDraft('') }} />清除已保存的 Bangumi 令牌</span>}
     </label>
-    <label className="block text-sm text-text-secondary">代理地址（留空使用系统代理）<input className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm" placeholder="http://127.0.0.1:7897" value={settings.proxy_url ?? ''} disabled={loading || saving} onChange={event => set('proxy_url', event.target.value)} /></label>
     <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.07] pt-3">
       <PosterRepairControls includeFavorites missingOnly onRefresh={onRefresh} />
       {message && <span role="status" className={message.includes('失败') ? 'text-xs text-red-300' : 'text-xs text-text-secondary'}>{message}</span>}

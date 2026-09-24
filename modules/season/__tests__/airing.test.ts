@@ -4,6 +4,10 @@ import { providerRateLimitGate } from '../../../server/services/provider-rate-li
 
 const mockedInstance = vi.hoisted(() => ({ db: undefined as any, settingsDb: { get: () => null } }))
 vi.mock('../../../server/db/instance', () => mockedInstance)
+vi.mock('../../../server/services/network', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../server/services/network')>(),
+  networkFetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
+}))
 
 import { anilistIdsOf, bangumiIdsOf, favoriteAirStatusFallback, refreshAiringProgress, resetAiringProgressCache, tmdbIdsOf } from '../server/airing'
 

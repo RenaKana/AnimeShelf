@@ -6,8 +6,6 @@ import { isValidPosterImage, MAX_POSTER_BYTES } from '../../../server/services/p
 export { isValidPosterImage } from '../../../server/services/poster-image'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import net from 'node:net'
-import { imageTunnelAgent } from '../../../server/services/image-tunnel'
-import { getImageProxy, isTrustedImageOrigin } from '../../../server/services/image-proxy'
 import type { Database } from 'node-sqlite3-wasm'
 import { POSTER_DIR } from '../../../server/db/schema'
 import { db as processDb, settingsDb } from '../../../server/db/instance'
@@ -15,7 +13,9 @@ import { requestSignal } from '../../../server/core/request-signal'
 import { isProviderRateLimitError, providerRequest, readProviderJson } from '../../../server/services/provider-rate-limit'
 import { makeFolderDb } from '../../../server/db/folders'
 import { resolveFolderMediaDomain } from '../../../server/services/folder-presentation'
-import { getLocalProxyFallbacks, getProxy, type ProxyConfig } from '../../../server/services/proxy'
+import { isTrustedImageOrigin } from '../../../server/services/image-proxy'
+import { networkAxiosConfig, networkFailure, networkFetch } from '../../../server/services/network'
+import { ProxyError, resolveProxy } from '../../../server/services/proxy'
 import { rebuildMediaCatalogForFolder } from '../../../server/core/catalog-access'
 import type { Folder } from '../../../server/types'
 import {
@@ -36,13 +36,36 @@ import packageMetadata from '../../../package.json'
 const { version, homepage } = packageMetadata as { version: string; homepage?: string }
 const bangumiUserAgent = `Rena/AnimeShelf/${version}${homepage ? ` (${homepage})` : ''}`
 
-// 共享 axios 实例；代理在每次请求时动态读取（设置项 proxy_url 优先，否则探测注册表——Clash 类场景，改动即时生效）
+// Shared Axios instance; every request obtains a fresh route from the network service.
 const http = axios.create({ timeout: 15000, headers: { 'User-Agent': 'AnimeShelf/1.0 (local media manager)' } })
-export const withProxy = (cfg: any = {}) => {
+async function routedAxiosGet(url: string, cfg: Record<string, any> = {}) {
   const signal = requestSignal(processDb, cfg.signal)
-  if (signal) cfg = { ...cfg, signal }
-  const p = getProxy()
-  return p ? { ...cfg, proxy: { protocol: p.protocol, host: p.host, port: p.port } } : { ...cfg, proxy: false }
+  const decision = resolveProxy(url)
+  const route = networkAxiosConfig(url, signal, { route: decision })
+  try {
+    return await http.get(url, { ...cfg, ...route.config, ...(signal ? { signal } : {}) })
+  } catch (error: any) {
+    if (signal?.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'AbortError') throw error
+    if (error?.response) throw error
+    throw networkFailure(error, Boolean(decision.proxy))
+  } finally {
+    route.dispose()
+  }
+}
+
+async function routedAxiosPost(url: string, data: unknown, cfg: Record<string, any> = {}) {
+  const signal = requestSignal(processDb, cfg.signal)
+  const decision = resolveProxy(url)
+  const route = networkAxiosConfig(url, signal, { route: decision })
+  try {
+    return await http.post(url, data, { ...cfg, ...route.config, ...(signal ? { signal } : {}) })
+  } catch (error: any) {
+    if (signal?.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'AbortError') throw error
+    if (error?.response) throw error
+    throw networkFailure(error, Boolean(decision.proxy))
+  } finally {
+    route.dispose()
+  }
 }
 
 export interface AniListCandidate {
@@ -424,30 +447,30 @@ export async function searchAniList(query: string, options: MetadataRequestOptio
   // Avoid a network call when the target library is explicitly live action.
   if (options.mediaDomain === 'live_action') return []
   try {
-    const { data } = await providerRequest('anilist', requestSignal(processDb, options.signal), () => http.post('https://graphql.anilist.co', { query: QUERY, variables: { search: query, perPage: 8 } }, withProxy({
+    const { data } = await providerRequest('anilist', requestSignal(processDb, options.signal), () => routedAxiosPost('https://graphql.anilist.co', { query: QUERY, variables: { search: query, perPage: 8 } }, {
       ...metadataRequestConfig(options),
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    })))
+    }))
     const mediaList: unknown[] = data?.data?.Page?.media ?? []
     return mediaList.map(media => mapAniListMedia(media as Record<string, any>))
   } catch (e: any) {
     // 限流（429）抛出交由调用方等待重试；其余网络错误/无结果返回空
     if (options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
-    if (isProviderRateLimitError(e) || e?.response?.status === 429) throw e
+    if (isProviderRateLimitError(e) || e instanceof ProxyError || e?.response?.status === 429) throw e
     return []
   }
 }
 
 export async function getAniListDetail(anilistId: number, options: MetadataRequestOptions = {}): Promise<AniListCandidate | null> {
   try {
-    const { data } = await providerRequest('anilist', requestSignal(processDb, options.signal), () => http.post('https://graphql.anilist.co', {
+    const { data } = await providerRequest('anilist', requestSignal(processDb, options.signal), () => routedAxiosPost('https://graphql.anilist.co', {
       query: ANILIST_ID_QUERY,
       variables: { id: anilistId },
-    }, withProxy({ ...metadataRequestConfig(options), headers: { 'Content-Type': 'application/json', Accept: 'application/json' } })))
+    }, { ...metadataRequestConfig(options), headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }))
     const media = data?.data?.Media
     return media?.id ? mapAniListMedia(media) : null
   } catch (e: any) {
-    if (options.signal?.aborted || e?.code === 'ERR_CANCELED' || isProviderRateLimitError(e)) throw e
+    if (options.signal?.aborted || e?.code === 'ERR_CANCELED' || isProviderRateLimitError(e) || e instanceof ProxyError) throw e
     return null
   }
 }
@@ -462,11 +485,11 @@ export function getBangumiToken(): string {
 }
 
 // Bangumi 请求配置：应用身份不含用户信息；带 token 时附加 Authorization 头
-function bangumiCfg(cfg: any = {}, proxy: ProxyConfig | null = getProxy()) {
+function bangumiCfg(cfg: any = {}) {
   const signal = requestSignal(processDb, cfg.signal)
   if (signal) cfg = { ...cfg, signal }
   const token = getBangumiToken()
-  const merged = proxy ? { ...cfg, proxy } : { ...cfg, proxy: false }
+  const merged = { ...cfg }
   merged.headers = { ...(merged.headers ?? {}), 'User-Agent': bangumiUserAgent }
   if (token) {
     merged.headers = { ...(merged.headers ?? {}), Authorization: `Bearer ${token}` }
@@ -474,42 +497,12 @@ function bangumiCfg(cfg: any = {}, proxy: ProxyConfig | null = getProxy()) {
   return merged
 }
 
-// Bangumi 在部分国内网络会直接重置连接。未手动配置代理时先直连，
-// 仅遇到网络层错误才快速尝试常见的本机代理端口；HTTP 错误保持原样返回。
 async function bangumiGet(url: string, cfg: any = {}) {
-  const configuredProxy = getProxy()
-  const candidates: Array<ProxyConfig | null> = configuredProxy
-    ? [configuredProxy]
-    : [null, ...getLocalProxyFallbacks()]
-  let lastError: any
-  for (const proxy of candidates) {
-    try {
-      return await http.get(url, bangumiCfg({ timeout: 8000, ...cfg }, proxy))
-    } catch (e: any) {
-      lastError = e
-      if (cfg.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
-      if (e?.response) throw e
-    }
-  }
-  throw lastError
+  return routedAxiosGet(url, bangumiCfg({ timeout: 8000, ...cfg }))
 }
 
 async function bangumiPost(url: string, data: unknown, cfg: any = {}) {
-  const configuredProxy = getProxy()
-  const candidates: Array<ProxyConfig | null> = configuredProxy
-    ? [configuredProxy]
-    : [null, ...getLocalProxyFallbacks()]
-  let lastError: any
-  for (const proxy of candidates) {
-    try {
-      return await http.post(url, data, bangumiCfg({ timeout: 8000, ...cfg }, proxy))
-    } catch (e: any) {
-      lastError = e
-      if (cfg.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
-      if (e?.response) throw e
-    }
-  }
-  throw lastError
+  return routedAxiosPost(url, data, bangumiCfg({ timeout: 8000, ...cfg }))
 }
 
 const REMOTE_IMAGE_CACHE_TTL = 5 * 60 * 1000
@@ -754,30 +747,8 @@ export async function validateRemoteImageUrl(value: string): Promise<URL> {
   return (await validateRemoteImageRequest(value)).url
 }
 
-function createPinnedImageLookup(hostname: string, addresses: readonly ResolvedImageAddress[]) {
-  const expectedHostname = normalizeImageHostname(hostname)
-  return (
-    lookupHostname: string,
-    options: object,
-    callback: (error: Error | null, address: string | { address: string; family?: 4 | 6 } | Array<{ address: string; family?: 4 | 6 }>, family?: 4 | 6) => void,
-  ): void => {
-    if (normalizeImageHostname(lookupHostname) !== expectedHostname) {
-      const error = new Error('远程图片 DNS 目标与已验证主机不一致')
-      error.name = 'RemoteImageDnsTargetMismatch'
-      callback(error, '', undefined)
-      return
-    }
-    if ((options as { all?: boolean }).all) {
-      callback(null, addresses.map(({ address, family }) => ({ address, family })))
-      return
-    }
-    const first = addresses[0]
-    callback(null, first.address, first.family)
-  }
-}
-
-// Built-in HTTPS CDNs may use the configured loopback proxy. All other images
-// retain DNS validation and address pinning; no port probing or generic fallback.
+// Built-in HTTPS CDNs use the normal route. Other images retain DNS validation
+// and pass the validated address into the network transport.
 export interface FetchRemoteImageOptions {
   force?: boolean
   signal?: AbortSignal
@@ -803,9 +774,6 @@ export async function fetchRemoteImage(url: string, options: FetchRemoteImageOpt
   try {
     throwIfRemoteImageAborted(lifecycle.signal)
     const parsed = parseRemoteImageUrl(url)
-    const proxyUrl = isTrustedImageOrigin(parsed) ? getImageProxy() : null
-    const addresses = proxyUrl ? [] : await resolveSafeImageHost(parsed.hostname, lifecycle.signal)
-    throwIfRemoteImageAborted(lifecycle.signal)
     const requestUrl = parsed.href
     const cached = remoteImageCache.get(requestUrl)
     if (!options.force && cached && cached.expires > Date.now() && isValidPosterImage(cached.data)) {
@@ -815,27 +783,25 @@ export async function fetchRemoteImage(url: string, options: FetchRemoteImageOpt
     const existing = options.force ? undefined : remoteImageInFlight.get(requestUrl)
     if (existing) return await awaitWithRemoteImageAbort(existing, lifecycle.signal)
 
+    const decision = resolveProxy(requestUrl)
+    const proxyResolvedTrustedOrigin = Boolean(decision.proxy && isTrustedImageOrigin(parsed))
+    const addresses = proxyResolvedTrustedOrigin ? [] : await resolveSafeImageHost(parsed.hostname, lifecycle.signal)
+    throwIfRemoteImageAborted(lifecycle.signal)
     const request = (async () => {
-    const agent = proxyUrl ? imageTunnelAgent(proxyUrl, lifecycle.signal) : undefined
+    const route = networkAxiosConfig(requestUrl, lifecycle.signal, {
+      route: decision,
+      pinnedAddress: addresses[0],
+    })
     try {
       const resp = await http.get(requestUrl, {
+        ...route.config,
         signal: lifecycle.signal,
-        // The URL hostname remains intact for Host/SNI/certificate checks. The
-        // callback only returns addresses that were validated immediately
-        // before this request, so a second DNS answer cannot redirect the
-        // socket to a private endpoint.
-        ...(agent ? { httpsAgent: agent } : { lookup: createPinnedImageLookup(parsed.hostname, addresses) }),
         responseType: 'arraybuffer',
         maxContentLength: MAX_POSTER_BYTES,
         maxBodyLength: MAX_POSTER_BYTES,
         timeout: 6000,
-        // Do not follow a redirect. The target would otherwise need to be
-        // resolved and checked again before the request is sent.
         maxRedirects: 0,
         validateStatus: status => status === 200,
-        // CONNECT retains the original TLS hostname/certificate verification.
-        // Axios/environment proxy discovery must never widen the allowed path.
-        proxy: false,
       })
       const status = Number(resp.status)
       if (Number.isFinite(status) && (status < 200 || status >= 300)) {
@@ -859,9 +825,10 @@ export async function fetchRemoteImage(url: string, options: FetchRemoteImageOpt
       return image
     } catch (error: any) {
       if (lifecycle.signal.aborted) throw remoteImageAbortError(lifecycle.signal)
-      throw error
+      if (error?.response || error?.code === 'ERR_REMOTE_IMAGE_VALIDATION') throw error
+      throw networkFailure(error, Boolean(decision.proxy))
     } finally {
-      agent?.destroy()
+      route.dispose()
     }
     })().finally(() => { if (!options.force) remoteImageInFlight.delete(requestUrl) })
     if (!options.force) remoteImageInFlight.set(requestUrl, request)
@@ -882,25 +849,16 @@ export async function getTMDBPoster(tmdbId: number, options: MetadataRequestOpti
   const kinds = [options.tmdbMediaType] as const
   for (const kind of kinds) {
     try {
-      const url = new URL(`https://api.themoviedb.org/3/${kind}/${tmdbId}`)
-      url.searchParams.set('api_key', key); url.searchParams.set('language', 'zh-CN')
-      // 直连
-      try {
-        const signal = requestSignal(processDb, options.signal, 6000)
-        const resp = await providerRequest('tmdb', signal, () => fetch(url, { signal }))
-        if (resp.ok) {
-          const data: any = await resp.json()
-          if (data?.poster_path) return `https://image.tmdb.org/t/p/w500${data.poster_path}`
-        }
-      } catch (error) {
-        if (options.signal?.aborted || isProviderRateLimitError(error)) throw error
-        /* 直连失败走代理 */
-      }
-      // 代理
-      const { data } = await providerRequest('tmdb', requestSignal(processDb, options.signal), () => http.get(`https://api.themoviedb.org/3/${kind}/${tmdbId}`, withProxy({ signal: options.signal, params: { api_key: key, language: 'zh-CN' } })))
+      const url = `https://api.themoviedb.org/3/${kind}/${tmdbId}`
+      const signal = requestSignal(processDb, options.signal, 6000)
+      const { data } = await providerRequest('tmdb', signal, () => routedAxiosGet(url, {
+        signal,
+        timeout: 6000,
+        params: { api_key: key, language: 'zh-CN' },
+      }))
       return data?.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null
     } catch (error) {
-      if (options.signal?.aborted || options.throwOnError || isProviderRateLimitError(error)) throw error
+      if (options.signal?.aborted || options.throwOnError || isProviderRateLimitError(error) || error instanceof ProxyError) throw error
     }
   }
   return null
@@ -911,31 +869,22 @@ export async function getTMDBDetail(tmdbId: number, mediaType: 'movie' | 'tv'): 
   const key = getTMDBKey()
   if (!key) return null
   try {
-    const url = new URL(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}`)
-    url.searchParams.set('api_key', key); url.searchParams.set('language', 'zh-CN')
-    try {
-      const signal = requestSignal(processDb, undefined, 6000)
-      const resp = await providerRequest('tmdb', signal, () => fetch(url, { signal }))
-      if (resp.ok) {
-        const d: any = await resp.json()
-        return {
-          posterUrl: d?.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
-          synopsis: d?.overview || null,
-          domainEvidence: d?.id === tmdbId ? candidateDomainEvidence('tmdb', { tmdbId, mediaType, genres: d.genres }) : undefined,
-        }
-      }
-    } catch (error) { if (isProviderRateLimitError(error)) throw error /* 直连失败走代理 */ }
-    const { data } = await providerRequest('tmdb', requestSignal(processDb), () => http.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}`, withProxy({ params: { api_key: key, language: 'zh-CN' } })))
+    const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}`
+    const signal = requestSignal(processDb, undefined, 6000)
+    const { data } = await providerRequest('tmdb', signal, () => routedAxiosGet(url, {
+      signal,
+      timeout: 6000,
+      params: { api_key: key, language: 'zh-CN' },
+    }))
     return { posterUrl: data?.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null, synopsis: data?.overview || null,
       domainEvidence: data?.id === tmdbId ? candidateDomainEvidence('tmdb', { tmdbId, mediaType, genres: data.genres }) : undefined }
   } catch (error) {
-    if (isProviderRateLimitError(error)) throw error
+    if (isProviderRateLimitError(error) || error instanceof ProxyError) throw error
     return null
   }
 }
 
 // TMDB 搜索（zh-CN 语言返回中文标题/简介；multi 同时覆盖电影与剧集）
-// 网络双通道：先直连（fetch），失败再走配置代理（axios）；都失败抛错由调用方展示原因
 export async function searchTMDB(query: string, key: string, options: MetadataRequestOptions = {}): Promise<TMDBCandidate[]> {
   const mapResults = (data: any): TMDBCandidate[] => {
     const results: any[] = data?.results ?? []
@@ -976,30 +925,21 @@ export async function searchTMDB(query: string, key: string, options: MetadataRe
       mediaDomain,
     }))
   }
-  // 1) 直连
+  const url = 'https://api.themoviedb.org/3/search/multi'
   try {
-    const url = new URL('https://api.themoviedb.org/3/search/multi')
-    url.searchParams.set('query', query); url.searchParams.set('api_key', key)
-    url.searchParams.set('language', 'zh-CN'); url.searchParams.set('include_adult', 'false')
     const signal = requestSignal(processDb, options.signal, 8000)
-    const resp = await providerRequest('tmdb', signal, () => fetch(url, { signal }))
-    if (resp.status === 401) throw new Error('TMDB API Key 无效')
-    if (resp.ok) return mapResults(await resp.json())
-  } catch (e: any) {
-    if (isProviderRateLimitError(e) || options.signal?.aborted || (e instanceof Error && e.message === 'TMDB API Key 无效')) throw e
-  }
-  // 2) 走配置代理
-  try {
-    const { data } = await providerRequest('tmdb', requestSignal(processDb, options.signal), () => http.get('https://api.themoviedb.org/3/search/multi', withProxy({
+    const { data } = await providerRequest('tmdb', signal, () => routedAxiosGet(url, {
       ...metadataRequestConfig(options),
+      signal,
+      timeout: 8000,
       params: { query, api_key: key, language: 'zh-CN', include_adult: false },
-    })))
+    }))
     if (data?.status_message) throw new Error(data.status_message)
     return mapResults(data)
   } catch (e: any) {
-    if (isProviderRateLimitError(e) || options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
+    if (isProviderRateLimitError(e) || e instanceof ProxyError || options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
     if (e?.message === 'TMDB API Key 无效' || e?.response?.status === 401) throw new Error('TMDB API Key 无效')
-    throw new Error('TMDB 网络不可达（直连与代理均失败），请检查 Clash 规则/节点或网络')
+    throw new Error('TMDB 网络不可达，请检查代理配置或网络')
   }
 }
 
@@ -1084,7 +1024,7 @@ export async function cachePoster(url: string, id: string, options: CachePosterO
     const image = await fetchRemoteImage(url, { force: options.force, signal: options.signal })
     return replacePoster(directory, id, posterExtension(url, image.contentType), image.data)
   } catch (error) {
-    if (options.throwOnError || options.signal?.aborted) throw error
+    if (options.throwOnError || options.signal?.aborted || isProviderRateLimitError(error) || error instanceof ProxyError) throw error
     if (options.force) return null
     return existing ? `/posters/${id}.${existing.ext}` : null
   }
@@ -1094,7 +1034,7 @@ export async function cachePoster(url: string, id: string, options: CachePosterO
 export async function getAnilistPosterUrl(anilistId: number, options: MetadataRequestOptions = {}): Promise<string | null> {
   try {
     const signal = requestSignal(processDb, options.signal, 8000)
-    const resp = await providerRequest('anilist', signal, () => fetch('https://graphql.anilist.co', {
+    const resp = await providerRequest('anilist', signal, () => networkFetch('https://graphql.anilist.co', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'AnimeShelf/1.0 (local media manager)' },
       body: JSON.stringify({
@@ -1116,7 +1056,7 @@ export async function getAnilistPosterUrl(anilistId: number, options: MetadataRe
     }
     return d?.data?.Media?.coverImage?.extraLarge ?? d?.data?.Media?.coverImage?.large ?? null
   } catch (error) {
-    if (options.signal?.aborted || options.throwOnError || isProviderRateLimitError(error)) throw error
+    if (options.signal?.aborted || options.throwOnError || isProviderRateLimitError(error) || error instanceof ProxyError) throw error
     return null
   }
 }
@@ -1184,6 +1124,7 @@ export async function searchBangumi(query: string, options: MetadataRequestOptio
     } catch (e: any) {
       if (options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
       if (e?.response?.status === 429) throw e
+      if (e instanceof ProxyError) throw e
       const { data } = await bangumiGet('https://api.bgm.tv/search/subject/' + encodeURIComponent(query), {
         ...metadataRequestConfig(options),
         params: { responseGroup: 'large' },
@@ -1218,6 +1159,7 @@ export async function searchBangumi(query: string, options: MetadataRequestOptio
   } catch (e: any) {
     if (options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
     if (e?.response?.status === 429) throw e
+    if (e instanceof ProxyError) throw e
     return []
   }
 }
@@ -1232,6 +1174,7 @@ export async function getBangumiDetail(bgmId: number, options: MetadataRequestOp
   } catch (e: any) {
     if (options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
     if (e?.response?.status === 429) throw e
+    if (e instanceof ProxyError) throw e
     // 无响应的超时/断网时，同一主机的 legacy 接口也不可达，不再额外等待一个超时周期。
     if (!e?.response) return {}
     // 兼容代理节点尚未放行 v0，但 legacy 接口仍可用的情况。
@@ -1242,6 +1185,7 @@ export async function getBangumiDetail(bgmId: number, options: MetadataRequestOp
       if (legacyError instanceof BangumiDetailValidationError) throw legacyError
       if (options.signal?.aborted || legacyError?.code === 'ERR_CANCELED') throw legacyError
       if (legacyError?.response?.status === 429) throw legacyError
+      if (legacyError instanceof ProxyError) throw legacyError
       return {}
     }
   }
@@ -1258,6 +1202,7 @@ export async function getBangumiDetail(bgmId: number, options: MetadataRequestOp
       if (e instanceof BangumiDetailValidationError) throw e
       if (options.signal?.aborted || e?.code === 'ERR_CANCELED') throw e
       if (e?.response?.status === 429) throw e
+      if (e instanceof ProxyError) throw e
     }
   }
   const airDate = (typeof data?.date === 'string' && data.date.trim()) || (typeof data?.air_date === 'string' && data.air_date.trim()) || undefined
@@ -1288,7 +1233,10 @@ export async function findPreferredBangumiSynopsis(queries: string[], expectedYe
   let bestScore = Number.NEGATIVE_INFINITY
   for (const query of uniqueQueries) {
     let candidates: BangumiCandidate[]
-    try { candidates = await searchBangumi(query) } catch { continue }
+    try { candidates = await searchBangumi(query) } catch (error) {
+      if (error instanceof ProxyError) throw error
+      continue
+    }
     const picked = pickBangumiCandidate(candidates, query, 2, expectedYear)
     if (!picked) continue
     const score = scoreBangumiCandidate(picked, query, 2, expectedYear)
@@ -1297,7 +1245,10 @@ export async function findPreferredBangumiSynopsis(queries: string[], expectedYe
   }
   if (!best) return null
   let detail: Partial<BangumiCandidate> = {}
-  try { detail = await getBangumiDetail(best.bgmId, { expectedBangumiType: 2 }) } catch { /* 使用搜索摘要继续判断 */ }
+  try { detail = await getBangumiDetail(best.bgmId, { expectedBangumiType: 2 }) } catch (error) {
+    if (error instanceof ProxyError) throw error
+    /* 使用搜索摘要继续判断 */
+  }
   return [detail.synopsis, best.synopsis].find(isLikelyChineseSynopsis) ?? null
 }
 

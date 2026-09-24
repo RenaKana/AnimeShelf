@@ -2,6 +2,9 @@ import dns from 'node:dns/promises'
 import https from 'node:https'
 import tls from 'node:tls'
 import { BlockList, isIP } from 'node:net'
+import { proxyTunnelAgent } from '../../../server/services/image-tunnel'
+import { networkFailure } from '../../../server/services/network'
+import type { ProxyConfig } from '../../../server/services/proxy'
 import type { ListRequest, ListResponse } from './transport'
 
 export class DownloadNetworkError extends Error {
@@ -86,9 +89,24 @@ export function pinnedAgent(hostname: string, address: Address, signal: AbortSig
 
 export type PinnedSend = (url: URL, request: ListRequest, address: Address, signal: AbortSignal) => Promise<ListResponse & { location?: string }>
 export const sendPinned: PinnedSend = async (url, request, address, signal) => {
+  try { return await sendWithAgent(url, request, signal, pinnedAgent(url.hostname, address, signal)) }
+  catch (error) {
+    if (signal.aborted) throw signal.reason
+    if (error instanceof DownloadNetworkError) throw error
+    throw networkFailure(error, false)
+  }
+}
+export async function sendProxied(url: URL, request: ListRequest, proxy: ProxyConfig, signal: AbortSignal): Promise<ListResponse & { location?: string }> {
+  try { return await sendWithAgent(url, request, signal, proxyTunnelAgent(proxy.url, url, signal) as https.Agent) }
+  catch (error) {
+    if (signal.aborted) throw signal.reason
+    if (error instanceof DownloadNetworkError) throw error
+    throw networkFailure(error, true)
+  }
+}
+async function sendWithAgent(url: URL, request: ListRequest, signal: AbortSignal, agent: https.Agent): Promise<ListResponse & { location?: string }> {
   const data = request.body === undefined ? undefined : JSON.stringify(request.body)
-  if (data && Buffer.byteLength(data) > 8192) throw new Error('Request too large')
-  const agent = pinnedAgent(url.hostname, address, signal)
+  if (data && Buffer.byteLength(data) > 8192) { agent.destroy(); throw new Error('Request too large') }
   try {
     return await new Promise((resolve, reject) => {
       const req = https.request(url, { agent, signal, method: request.method, maxHeaderSize: 16384,
@@ -101,11 +119,11 @@ export const sendPinned: PinnedSend = async (url, request, address, signal) => {
         const chunks: Buffer[] = []
         const encoding = response.headers['content-encoding']
         if ((encoding && encoding !== 'identity') || Number(response.headers['content-length']) > 2 * 1024 * 1024) {
-          req.destroy(new Error('Unsupported or oversized response')); return
+          req.destroy(new DownloadNetworkError('connection', '下载来源响应过大或编码不受支持')); return
         }
         response.on('data', (chunk: Buffer) => {
           size += chunk.length
-          if (size > 2 * 1024 * 1024) { req.destroy(new Error('Response too large')); return }
+          if (size > 2 * 1024 * 1024) { req.destroy(new DownloadNetworkError('connection', '下载来源响应超过大小限制')); return }
           chunks.push(chunk)
         })
         response.on('error', reject)

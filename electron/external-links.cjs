@@ -13,7 +13,7 @@ function externalHttpsUrl(raw) {
   } catch { return null }
 }
 
-function installExternalLinks(webContents, internalUrl, openExternal) {
+function installExternalLinks(webContents, internalUrl, openExternal, externalProxySession, canOpenExternal = () => true) {
   const origin = new URL(internalUrl).origin
   const internal = raw => {
     try { const url = new URL(raw); return url.origin === origin && !url.username && !url.password } catch { return false }
@@ -32,9 +32,13 @@ function installExternalLinks(webContents, internalUrl, openExternal) {
     } catch { return false }
   }
   webContents.setWindowOpenHandler(({ url }) => {
-    // Preserve older public HTTP source links in isolated child windows. Only
-    // validated HTTPS links are handed to the system browser.
-    if (internal(url) || existingHttpLink(url)) return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } }
+    if (internal(url)) return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } }
+    if (existingHttpLink(url)) {
+      if (!canOpenExternal()) return { action: 'deny' }
+      const webPreferences = { contextIsolation: true, nodeIntegration: false, sandbox: true }
+      if (externalProxySession) webPreferences.session = externalProxySession
+      return { action: 'allow', overrideBrowserWindowOptions: { webPreferences } }
+    }
     open(url)
     return { action: 'deny' }
   })
@@ -45,7 +49,7 @@ function installExternalLinks(webContents, internalUrl, openExternal) {
   }
   webContents.on('will-navigate', navigate)
   webContents.on('will-redirect', navigate)
-  webContents.on('did-create-window', (child, details) => installExternalLinks(child.webContents, details?.url ?? internalUrl, openExternal))
+  webContents.on('did-create-window', (child, details) => installExternalLinks(child.webContents, details?.url ?? internalUrl, openExternal, externalProxySession, canOpenExternal))
 }
 
 module.exports = { externalHttpsUrl, installExternalLinks }

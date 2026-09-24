@@ -1,4 +1,6 @@
 [
+  { "method": "GET", "path": "/api/remote-media" },
+  { "method": "HEAD", "path": "/api/remote-media" },
   { "method": "PUT", "path": "/api/folders/batch/media-domain" },
   { "method": "GET", "path": "/api/folder-moves/directories" },
   { "method": "POST", "path": "/api/folder-moves/preview" },
@@ -104,6 +106,10 @@
   {
     "method": "GET",
     "path": "/api/settings/system-info"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/proxy-status"
   },
   {
     "method": "POST",

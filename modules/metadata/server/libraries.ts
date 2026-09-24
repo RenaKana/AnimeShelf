@@ -5,6 +5,7 @@ import { makeLibraryDb } from '../../../server/db/libraries'
 import { rebuildLibraryMediaCatalog, rebuildLibraryMediaCatalogInTransaction } from '../../../server/core/catalog-access'
 import { invalidateLibraryMatches, moduleRuntime } from '../../../server/core/extensions'
 import { assertLibraryAvailable } from '../../../server/services/library-maintenance'
+import { ProxyError } from '../../../server/services/proxy'
 import { candidateDomainEvidence, mediaDomainForLibrary, type MediaDomain } from '../../../shared/media-domain'
 import { FolderScopeError, freezeFolderScope } from './folder-scope'
 import { sqlAll, sqlRun } from '../../../server/db/sql'
@@ -251,7 +252,9 @@ async function runMatchTask(task: MatchTask, source: MetadataMatchSource = 'auto
               const candidate = pickAutomaticMetadataCandidate(candidateSource, found, identityQueries, expectedYear)
               if (candidate) candidates.push({ source: candidateSource, candidate })
               else if (found.length) inconclusive = true
-            } catch { failReason = `${candidateSource}-error` }
+            } catch (error) {
+              failReason = error instanceof ProxyError ? error.code : `${candidateSource}-error`
+            }
             if (mediaDomain !== 'unknown' && candidates.length) break
           }
           const domains = new Set(candidates.map(value => candidateMediaDomain(value.source, value.candidate)))

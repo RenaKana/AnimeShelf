@@ -2,6 +2,8 @@ import { db } from '../../../server/db/instance'
 import { moduleRuntime } from '../../../server/core/extensions'
 import { requestSignal } from '../../../server/core/request-signal'
 import { isProviderRateLimitError, providerRequest, readProviderJson } from '../../../server/services/provider-rate-limit'
+import { networkFetch } from '../../../server/services/network'
+import { ProxyError } from '../../../server/services/proxy'
 import { getBangumiDetail, type AirStatus } from '../../metadata/server/metadata'
 import { classifyFavorite } from '../../../shared/favorite-media-domain'
 
@@ -172,7 +174,7 @@ async function refreshAniList(rows: FavoriteProgressRow[]): Promise<number> {
   const ids = [...byAniList.keys()].slice(0, 50)
   const malIds = [...byMal.keys()].slice(0, 50)
   const signal = requestSignal(db, undefined, 8000)
-  const resp = await providerRequest('anilist', signal, () => fetch('https://graphql.anilist.co', {
+  const resp = await providerRequest('anilist', signal, () => networkFetch('https://graphql.anilist.co', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': 'AnimeShelf/1.0 (local media manager)' },
     body: JSON.stringify({
@@ -196,6 +198,7 @@ async function refreshAniList(rows: FavoriteProgressRow[]): Promise<number> {
     WHERE item_id = ?
   `)
   let updated = 0
+  let transportError: ProxyError | null = null
   try {
     for (const media of medias) {
       const targets = byAniList.get(Number(media?.id)) ?? byMal.get(Number(media?.idMal)) ?? []
@@ -246,6 +249,7 @@ async function refreshBangumi(rows: FavoriteProgressRow[]): Promise<number> {
     WHERE item_id = ?
   `)
   let updated = 0
+  let transportError: ProxyError | null = null
   try {
     await runPool(targets, async row => {
       const bangumiId = bangumiIdOf(row.item_id, row.bangumi_id, row.links)
@@ -256,13 +260,15 @@ async function refreshBangumi(rows: FavoriteProgressRow[]): Promise<number> {
         update.run([detail.airedEpisodes ?? null, detail.episodes ?? null, detail.airStatus ?? null, row.item_id])
         bangumiAttemptedAt.set(row.item_id, now)
         updated++
-      } catch {
+      } catch (error) {
+        if (error instanceof ProxyError) transportError ??= error
         // 单条失败不阻塞其它收藏；全局 30 分钟冷却仍会阻止 GET 紧密重试。
       }
     }, BANGUMI_CONCURRENCY)
   } finally {
     update.finalize()
   }
+  if (transportError) throw transportError
   return updated
 }
 
@@ -288,6 +294,8 @@ async function runRefresh(): Promise<number> {
     refreshAniList(rows),
     refreshBangumi(rows),
   ])
+  const proxyFailure = [aniListResult, bangumiResult].find(result => result.status === 'rejected' && result.reason instanceof ProxyError)
+  if (proxyFailure?.status === 'rejected') throw proxyFailure.reason
   const updated = (aniListResult.status === 'fulfilled' ? aniListResult.value : 0)
     + (bangumiResult.status === 'fulfilled' ? bangumiResult.value : 0)
   const rateLimit = [aniListResult, bangumiResult]

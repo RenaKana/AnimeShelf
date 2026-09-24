@@ -27,7 +27,8 @@
     "node-sqlite3-wasm": "^0.8.59",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.24.1"
+    "react-router-dom": "^6.24.1",
+    "undici": "7.29.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

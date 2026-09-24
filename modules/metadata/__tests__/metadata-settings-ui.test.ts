@@ -17,7 +17,7 @@ describe('metadata settings credential UI', () => {
       clearTmdbKey: false,
       bangumiTokenDraft: '',
       clearBangumiToken: false,
-    })).toEqual({ auto_match_metadata: '1', proxy_url: 'http://127.0.0.1:7897' })
+    })).toEqual({ auto_match_metadata: '1' })
   })
 
   it('sends only intentional replacements or explicit clears', () => {
@@ -28,7 +28,7 @@ describe('metadata settings credential UI', () => {
       bangumiTokenDraft: '',
       clearBangumiToken: false,
     })
-    expect(replaced).toEqual({ auto_match_metadata: '', proxy_url: '', tmdb_key: 'tmdb-new' })
+    expect(replaced).toEqual({ auto_match_metadata: '', tmdb_key: 'tmdb-new' })
 
     const cleared = metadataSettingsPayload({
       settings: {},
@@ -37,7 +37,7 @@ describe('metadata settings credential UI', () => {
       bangumiTokenDraft: '',
       clearBangumiToken: true,
     })
-    expect(cleared).toEqual({ auto_match_metadata: '', proxy_url: '', clear_tmdb_key: '1', clear_bangumi_token: '1' })
+    expect(cleared).toEqual({ auto_match_metadata: '', clear_tmdb_key: '1', clear_bangumi_token: '1' })
   })
 
   it('renders credential inputs as password fields with an explicit visibility control', () => {

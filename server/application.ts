@@ -21,6 +21,7 @@ import { LibraryScanCoordinator } from './services/library-scan-coordinator'
 import { isLocalOrigin } from './core/local-origin'
 import { FolderMoveService } from './services/folder-moves'
 import { createFolderMovesRouter } from './routes/folder-moves'
+import { createRemoteMediaRouter } from './routes/remote-media'
 
 export interface ApplicationOptions {
   database?: Database
@@ -122,6 +123,7 @@ export async function createApplication(options: ApplicationOptions = {}) {
     app.use('/api/service', createServiceRouter(instanceId, options.restart, () => assertLibraryAvailable(database)))
     app.use('/api/local-files', trackRouter(createLocalFilesRouter(() => database), modules))
     app.use('/api/folder-moves', trackRouter(createFolderMovesRouter(database, moves), modules))
+    app.use('/api/remote-media', createRemoteMediaRouter())
     for (const route of modules.routes().filter(route => !route.beforeJson)) mountModuleRoute(route)
     const [libraries, folders, files, tags, settings, play] = await Promise.all([
       import('./routes/libraries'), import('./routes/folders'), import('./routes/files'),

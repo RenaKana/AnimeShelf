@@ -2,16 +2,18 @@
 // 1) 同进程内启动后端（编译产物 dist-electron/server.cjs，动态端口）
 // 2) 独立窗口加载 http://127.0.0.1:<port>（后端同时服务 API 与前端 dist）
 // 3) 数据目录：exe 同目录 data/（portable 模式用 PORTABLE_EXECUTABLE_DIR 定位）
-const { app, BrowserWindow, Menu, dialog, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, shell, session } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const net = require('net')
 const { waitReady } = require('./backend-ready.cjs')
 const { installExternalLinks } = require('./external-links.cjs')
+const { startExternalProxySync } = require('./proxy-session.cjs')
 
 let win = null
 let zoom = 1
 let backend = null
+let externalProxySync = null
 let shuttingDown = false
 let shutdownComplete = false
 const startupController = new AbortController()
@@ -87,6 +89,12 @@ app.whenReady().then(async () => {
   if (!await waitReady(port, 15000, startupController.signal)) throw new Error('本地服务未能在 15 秒内就绪，请检查数据目录和启动日志。')
   if (shuttingDown || shutdownComplete) return
   backend.updateServiceRegistration?.({ state: 'running', apiPort: port, webUrl: devUrl })
+  externalProxySync = startExternalProxySync(
+    session.fromPartition('animeshelf-external-windows'),
+    'http://127.0.0.1:' + port + '/api/settings/proxy-status',
+  )
+  await externalProxySync.ready
+  if (shuttingDown || shutdownComplete) return
 
   // 调试模式：加载 Vite dev server（npm run electron:dev 时设置 ANIMESHELF_DEV=1）
   loadZoom()
@@ -102,7 +110,7 @@ app.whenReady().then(async () => {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   })
   win.webContents.setZoomFactor(zoom)
-  installExternalLinks(win.webContents, devUrl, url => shell.openExternal(url))
+  installExternalLinks(win.webContents, devUrl, url => shell.openExternal(url), externalProxySync.session, () => externalProxySync.canOpenExternal)
   // Ctrl+滚轮缩放（与浏览器习惯一致）
   win.webContents.on('before-input-event', (event, input) => {
     if (input.control && input.type === 'mouseWheel') {
@@ -130,6 +138,7 @@ app.on('before-quit', event => {
   if (shuttingDown) return
   shuttingDown = true
   startupController.abort()
+  externalProxySync?.stop()
   Promise.resolve(backend.shutdownServer()).then(() => {
     shutdownComplete = true
     app.quit()

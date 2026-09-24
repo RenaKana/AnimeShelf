@@ -5,6 +5,8 @@
 import type { AirStatus } from '../../metadata/server/metadata'
 import { candidateDomainEvidence, evidenceMediaDomain, mediaDomainForBangumiType, type MediaDomainEvidence, type MediaDomain } from '../../../shared/media-domain'
 import { isProviderRateLimitError, providerRequest, readProviderJson } from '../../../server/services/provider-rate-limit'
+import { networkFetch } from '../../../server/services/network'
+import { ProxyError } from '../../../server/services/proxy'
 
 export interface FavoriteDetail {
   domainEvidence?: MediaDomainEvidence[]
@@ -41,6 +43,7 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
   let airStatus: AirStatus = null
   const domainEvidence: MediaDomainEvidence[] = []
   let rateLimitError: unknown = null
+  let transportError: ProxyError | null = null
   type DetailSource = 'anilist' | 'bangumi' | 'tmdb'
   const orderedSources: DetailSource[] = source === 'auto'
     ? domain === 'live_action' ? ['tmdb', 'bangumi', 'anilist'] : ['bangumi', 'anilist', 'tmdb']
@@ -69,7 +72,10 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
         if (source !== 'auto') throw error
         rateLimitError ??= error
       }
-      /* 继续 */
+      if (error instanceof ProxyError) {
+        if (source !== 'auto') throw error
+        transportError ??= error
+      }
     }
   }
 
@@ -91,7 +97,12 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
         totalEpisodes = d.episodes ?? totalEpisodes
         airStatus = d.airStatus ?? airStatus
       }
-    } catch { /* 继续 */ }
+    } catch (error) {
+      if (error instanceof ProxyError) {
+        if (source !== 'auto') throw error
+        transportError ??= error
+      }
+    }
   }
 
   const fetchAniList = async () => {
@@ -101,9 +112,8 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
     const alVars = anilistId ? { id: Number(anilistId) } : malId ? { idMal: Number(malId) } : null
     if (!alVars) return
     try {
-      // AniList 国内可直连，无需代理
       const signal = AbortSignal.timeout(10000)
-      const resp = await providerRequest('anilist', signal, () => fetch('https://graphql.anilist.co', {
+      const resp = await providerRequest('anilist', signal, () => networkFetch('https://graphql.anilist.co', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': 'AnimeShelf/1.0 (local media manager)' },
         body: JSON.stringify({
@@ -130,13 +140,19 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
       if (media?.description && !synopsis) synopsis = String(media.description).slice(0, 500)
       // 海报下载失败不影响其余数据
       const url = media?.coverImage?.extraLarge ?? media?.coverImage?.large
-      if (url && !posterPath) { try { posterPath = await cachePoster(url, `fav_${itemId}`) } catch { /* 海报失败可接受 */ } }
+      if (url && !posterPath) {
+        try { posterPath = await cachePoster(url, `fav_${itemId}`) }
+        catch (error) { if (error instanceof ProxyError) throw error /* 普通海报失败可接受 */ }
+      }
     } catch (error) {
       if (isProviderRateLimitError(error)) {
         if (source !== 'auto') throw error
         rateLimitError ??= error
       }
-      /* 无详情可接受 */
+      if (error instanceof ProxyError) {
+        if (source !== 'auto') throw error
+        transportError ??= error
+      }
     }
   }
 
@@ -155,5 +171,6 @@ export async function fetchFavoriteDetail(itemId: string, links: { name: string;
     || domainEvidence.some(entry => evidenceMediaDomain(entry) !== 'unknown'),
   )
   if (!hasUsableDetail && rateLimitError) throw rateLimitError
+  if (!hasUsableDetail && transportError) throw transportError
   return { posterPath, synopsis, synopsisOriginal, airedEpisodes, totalEpisodes, airStatus, domainEvidence }
 }

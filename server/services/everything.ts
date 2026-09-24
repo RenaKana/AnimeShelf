@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { Agent } from 'undici'
 import { win32 as path } from 'path' // Everything 返回 Windows 路径，固定 win32 语义
 
 export interface EverythingFile { path: string; size: number | null; dateModified: number | null }
@@ -71,13 +72,16 @@ export class EverythingClient {
       const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
       let res: Response
       let data: any
+      const dispatcher = new Agent({ connect: { rejectUnauthorized: true } })
       try {
-        res = await fetch(`${this.baseUrl}/?${q.toString()}`, { signal: requestSignal })
+        res = await fetch(`${this.baseUrl}/?${q.toString()}`, { signal: requestSignal, dispatcher } as RequestInit)
         if (!res.ok) throw new EverythingQueryError(`Everything HTTP ${res.status}`, 'EVERYTHING_HTTP_ERROR')
         data = await res.json()
       } catch (error) {
         if (error instanceof EverythingQueryError || (error as Error).name === 'AbortError') throw error
         throw new EverythingQueryError(`Everything 请求失败：${(error as Error).message}`, 'EVERYTHING_UNAVAILABLE')
+      } finally {
+        void dispatcher.close().catch(() => undefined)
       }
       if (!Array.isArray(data?.results)) throw new EverythingQueryError('Everything 返回了无效的 results')
       const rawTotal = data?.totalResults
